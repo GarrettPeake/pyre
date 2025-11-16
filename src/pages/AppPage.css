@@ -27,6 +27,7 @@
 .header-logo {
   display: flex;
   align-items: center;
+  gap: var(--spacing-sm);
 }
 
 .logo-text {
@@ -35,6 +36,24 @@
   color: var(--color-accent-orange);
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
   margin: 0;
+}
+
+.info-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.info-button:hover {
+  background-color: var(--color-gray-200);
+  color: var(--color-accent-orange);
 }
 
 .header-links {
@@ -83,6 +102,30 @@
   font-size: var(--font-size-sm);
 }
 
+.hero-links {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.github-link,
+.kofi-link {
+  display: flex;
+  align-items: center;
+  transition: opacity 0.2s ease;
+}
+
+.github-link:hover,
+.kofi-link:hover {
+  opacity: 0.7;
+}
+
+.github-logo,
+.kofi-logo {
+  height: 2rem;
+  width: auto;
+}
+
 /* Main content */
 .app-main {
   flex: 1;
@@ -94,6 +137,203 @@
   margin: 0 auto;
 }
 
+/* Simulation Setup Card */
+.simulation-setup-card {
+  background: var(--color-white);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.setup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.setup-header-expanded {
+  margin-bottom: var(--spacing-md);
+}
+
+.setup-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.setup-title-input {
+  max-width: 400px;
+}
+
+.setup-buttons {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.setup-simulate-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-accent-orange);
+  color: var(--color-white);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.setup-simulate-button:hover {
+  background-color: #e66300;
+  box-shadow: var(--shadow-sm);
+}
+
+.setup-simulate-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.setup-simulate-button:disabled:hover {
+  background-color: var(--color-accent-orange);
+  box-shadow: none;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: var(--color-white);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.setup-edit-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.setup-edit-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.setup-edit-button.editing {
+  background-color: var(--color-primary);
+  color: var(--color-white);
+  border-color: var(--color-primary);
+}
+
+.setup-edit-button.editing:hover {
+  background-color: #45a049;
+}
+
+.setup-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.global-init-section {
+  width: 100%;
+}
+
+.graphs-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.graphs-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.graphs-config-title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.add-graph-button {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-primary);
+  color: var(--color-white);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-graph-button:hover {
+  background-color: #45a049;
+  box-shadow: var(--shadow-sm);
+}
+
+.graph-config-card {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--color-bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.graph-config-header {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+}
+
+.graph-config-header .floating-input-container:first-child {
+  flex: 2;
+}
+
+.graph-config-header .floating-input-container:nth-child(2) {
+  flex: 1;
+}
+
+.delete-graph-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  border: 1px solid var(--color-cancel);
+  color: var(--color-cancel);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.delete-graph-button:hover {
+  border-color: var(--color-cancel);
+  color: var(--color-cancel);
+}
+
+.graph-config-expressions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
 /* Overview card (age inputs + graphs) */
 .overview-card {
   background: var(--color-white);
@@ -103,10 +343,16 @@
   margin-bottom: var(--spacing-md);
 }
 
+.empty-graphs-message {
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-base);
+}
+
 .age-inputs-row {
   display: flex;
   gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
 }
 
 .age-inputs-row .floating-input-container {

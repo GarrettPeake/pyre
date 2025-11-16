@@ -1,23 +1,30 @@
 import { useParams } from "react-router-dom";
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import Block, {
-  type BlockRunnerResult,
-  type BlockState,
-} from "../components/Block";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import Block, { type BlockState } from "../components/Block";
 import FloatingLabelInput from "../components/FloatingLabelInput";
-import Chart, { type ChartDataPoint } from "../components/Chart";
+import FloatingLabelTextarea from "../components/FloatingLabelTextarea";
+import FloatingLabelSelect from "../components/FloatingLabelSelect";
+import Chart from "../components/Chart";
+import Modal from "../components/Modal";
+import {
+  runGlobalSimulation,
+  type SimulationSnapshot,
+} from "../SimulationEngine";
 import "./AppPage.css";
 import { v4 as uuidv4 } from "uuid";
+import { type GraphDefinition } from "../types";
 
 interface BlockData {
   id: string;
   state: BlockState;
-  executionResults: BlockRunnerResult[];
 }
 
 interface SavedPlanData {
+  simulationName: string;
   currentAge: number;
   retirementAge: number;
+  globalInit: string;
+  graphs: GraphDefinition[];
   blocks: Array<{
     id: string;
     state: BlockState;
@@ -30,8 +37,11 @@ async function fetchPlan(planId: string): Promise<SavedPlanData | null> {
     const response = await fetch(`/api/get_plan/${planId}`);
     if (response.status === 404) {
       return {
+        simulationName: "My Retirement Plan",
         currentAge: 30,
         retirementAge: 62,
+        globalInit: DEFAULT_GLOBAL_INIT,
+        graphs: DEFAULT_GRAPHS,
         blocks: DEFAULT_BLOCKS,
       };
     }
@@ -64,15 +74,42 @@ async function savePlan(planId: string, data: SavedPlanData): Promise<boolean> {
   }
 }
 
-interface DateResult {
-  assets: number;
-  liabilities: number;
-  income: number;
-  expenses: number;
-}
+// Default global initialization
+const DEFAULT_GLOBAL_INIT = `k401 = 100000
+cash = 100000
+investments = 200000
+bonds = 100000
+property = 0
+debts = 0`;
+
+// Default main graphs
+const DEFAULT_GRAPHS: GraphDefinition[] = [
+  {
+    id: uuidv4(),
+    title: "Net Worth",
+    frequency: "monthly",
+    verticals: [],
+    expressions: {
+      line: ["k401 + cash + investments + bonds + property - debts"],
+      stacked: ["k401", "cash", "investments", "bonds", "property", "-debts"],
+    },
+  },
+  {
+    id: uuidv4(),
+    title: "Mortgage (Interest vs Principle)",
+    frequency: "monthly",
+    verticals: [],
+    expressions: {
+      line: ["interest_portion", "principle_portion"],
+    },
+  },
+];
 
 // Default block configuration
-const DEFAULT_BLOCKS: BlockData[] = [
+const DEFAULT_BLOCKS: Array<{
+  id: string;
+  state: BlockState;
+}> = [
   {
     id: uuidv4(),
     state: {
@@ -80,32 +117,35 @@ const DEFAULT_BLOCKS: BlockData[] = [
       startDate: "2025-11-01",
       endDate: "2055-11-01",
       inputs: {
-        down_payment: "25000",
-        original_principle: "175000",
+        down: "25000",
+        principle: "175000",
         apr: "0.06",
       },
-      init: `asset_price = down_payment + original_principle
-current_principle = original_principle
-payments = total_periods
+      init: `asset_price = down + principle
 monthly_interest = apr / 12
-payment = original_principle * monthly_interest * (1 + monthly_interest) ** payments / ((1 + monthly_interest) ** payments - 1)`,
-      init_assets: "asset_price",
-      init_liabilities: "original_principle",
-      init_income: "",
-      init_expenses: "down_payment",
+payment = principle * monthly_interest * (1 + monthly_interest) ** total_periods / ((1 + monthly_interest) ** total_periods - 1)
+property = property + asset_price
+debts = debts + principle
+cash = cash - down`,
       frequency: "monthly",
-      execution: `interest_portion = current_principle * monthly_interest
+      execution: `interest_portion = principle * monthly_interest
 principle_portion = payment - interest_portion
-current_principle = current_principle - principle_portion
-reduction_in_liability = -principle_portion`,
-      execution_assets: "",
-      execution_liabilities: "reduction_in_liability",
-      execution_income: "",
-      execution_expenses: "payment",
-      graph_vars: "interest_portion,principle_portion",
-      graph_type: "line",
+principle = principle - principle_portion
+debts = debts - principle_portion
+cash = cash - payment`,
+      exports: "interest_portion,principle_portion,payment",
+      graphs: [
+        {
+          id: uuidv4(),
+          title: "Portions",
+          frequency: "monthly",
+          verticals: [],
+          expressions: {
+            line: ["interest_portion", "principle_portion"],
+          },
+        },
+      ],
     },
-    executionResults: [],
   },
 ];
 
@@ -115,27 +155,29 @@ const EMPTY_BLOCK_STATE: BlockState = {
   endDate: new Date().toISOString().split("T")[0],
   inputs: {},
   init: "",
-  init_assets: "",
-  init_liabilities: "",
-  init_income: "",
-  init_expenses: "",
   frequency: "monthly",
   execution: "",
-  execution_assets: "",
-  execution_liabilities: "",
-  execution_income: "",
-  execution_expenses: "",
-  graph_vars: "",
-  graph_type: "line",
+  exports: "",
+  graphs: [],
 };
 
 function AppPage() {
   const { planId } = useParams<{ planId: string }>();
+  const [simulationName, setSimulationName] =
+    useState<string>("My Retirement Plan");
   const [currentAge, setCurrentAge] = useState<number>(25);
   const [retirementAge, setRetirementAge] = useState<number>(65);
+  const [globalInit, setGlobalInit] = useState<string>(DEFAULT_GLOBAL_INIT);
+  const [graphs, setGraphs] = useState<GraphDefinition[]>(DEFAULT_GRAPHS);
   const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [isSaved, setIsSaved] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isEditingSetup, setIsEditingSetup] = useState<boolean>(false);
+  const [isSimulating, setIsSimulating] = useState<boolean>(true);
+  const [simulationSnapshots, setSimulationSnapshots] = useState<
+    SimulationSnapshot[]
+  >([]);
+  const [isTutorialOpen, setIsTutorialOpen] = useState<boolean>(false);
 
   // Load plan data from backend on mount
   useEffect(() => {
@@ -146,13 +188,15 @@ function AppPage() {
 
     fetchPlan(planId).then((data) => {
       if (data) {
+        setSimulationName(data.simulationName);
         setCurrentAge(data.currentAge);
         setRetirementAge(data.retirementAge);
+        setGlobalInit(data.globalInit);
+        setGraphs(data.graphs);
         setBlocks(
           data.blocks.map((block) => ({
             id: block.id,
             state: block.state,
-            executionResults: [],
           }))
         );
       }
@@ -160,27 +204,17 @@ function AppPage() {
     });
   }, [planId]);
 
-  // Callback to update execution results for a specific block
-  const handleBlockExecutionResults = useCallback(
-    (blockId: string, results: BlockRunnerResult[]) => {
-      console.log("Handling result update");
-      setBlocks((prevBlocks) =>
-        prevBlocks.map((block) =>
-          block.id === blockId ? { ...block, executionResults: results } : block
-        )
-      );
-    },
-    []
-  );
-
   // Save plan to backend
   const saveToBackend = useCallback(
     async (updatedBlocks: BlockData[]) => {
       if (!planId) return;
 
       const planData: SavedPlanData = {
+        simulationName,
         currentAge,
         retirementAge,
+        globalInit,
+        graphs,
         blocks: updatedBlocks.map((block) => ({
           id: block.id,
           state: block.state,
@@ -192,7 +226,7 @@ function AppPage() {
         setIsSaved(true);
       }
     },
-    [planId, currentAge, retirementAge]
+    [planId, simulationName, currentAge, retirementAge, globalInit, graphs]
   );
 
   // Handle block state changes - update state immediately
@@ -207,7 +241,7 @@ function AppPage() {
     []
   );
 
-  // Debounced auto-save when blocks or ages change
+  // Debounced auto-save when blocks, ages, globalInit, or graphs change
   useEffect(() => {
     // Don't save during initial load
     if (isLoading) return;
@@ -220,160 +254,77 @@ function AppPage() {
 
     // Cleanup function to cancel timer if state changes again
     return () => clearTimeout(timeoutId);
-  }, [blocks, currentAge, retirementAge, isLoading, saveToBackend]);
+  }, [
+    blocks,
+    simulationName,
+    currentAge,
+    retirementAge,
+    globalInit,
+    graphs,
+    isLoading,
+    saveToBackend,
+  ]);
 
-  // Generate data points from age 0 to 100
-  const currentYear = new Date().getFullYear();
+  // Run simulation manually
+  const runSimulation = useCallback(() => {
+    setIsSimulating(true);
 
-  // Aggregate execution results from all blocks
-  const aggregateResults = useCallback(() => {
-    // Create a map of date string -> aggregated values
-    const dateMap = new Map<string, DateResult>();
+    // Use setTimeout to allow the spinner to render before blocking computation
+    setTimeout(() => {
+      try {
+        // Calculate birth date from current age
+        const currentYear = new Date().getFullYear();
+        const birthDate = new Date(currentYear - currentAge, 0, 1);
 
-    // Create a lookup map for block execution results
-    const blockResultsMap = new Map<string, DateResult>();
+        // Run simulation
+        const snapshots = runGlobalSimulation({
+          globalInit,
+          blocks: blocks.map((b) => ({ id: b.id, state: b.state })),
+          birthDate,
+          currentAge,
+          endAge: 100,
+        });
 
-    // Populate the lookup map with all block execution results
-    blocks.forEach((block) => {
-      block.executionResults.forEach((result) => {
-        const resultDate = new Date(result.date);
-        const dateKey = resultDate.toISOString().split("T")[0];
-
-        const existing = blockResultsMap.get(dateKey);
-        if (existing) {
-          existing.assets += result.assets;
-          existing.liabilities += result.liabilities;
-          existing.income += result.income;
-          existing.expenses += result.expenses;
-        } else {
-          blockResultsMap.set(dateKey, {
-            assets: result.assets,
-            liabilities: result.liabilities,
-            income: result.income,
-            expenses: result.expenses,
-          });
-        }
-      });
-    });
-
-    console.log(blockResultsMap);
-
-    // Iterate through every single date from age 0 to 100 (365 days per year)
-    let previousAssets = 0;
-    let previousLiabilities = 0;
-
-    const startDate = new Date(currentYear - currentAge, 0, 1); // January 1st of birth year
-    const endDate = new Date(currentYear + (100 - currentAge), 11, 31); // December 31st at age 100
-
-    // Iterate day by day
-    const currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
-      const dateKey = currentDate.toISOString().split("T")[0];
-
-      // Inherit assets and liabilities from previous day
-      // Start with income and expenses at 0
-      const dayData = {
-        assets: previousAssets,
-        liabilities: previousLiabilities,
-        income: 0,
-        expenses: 0,
-      };
-
-      // Check if there are any execution results for this date
-      const blockResults = blockResultsMap.get(dateKey);
-      if (blockResults) {
-        dayData.assets += blockResults.assets;
-        dayData.liabilities += blockResults.liabilities;
-        dayData.income += blockResults.income;
-        dayData.expenses += blockResults.expenses;
+        setSimulationSnapshots(snapshots);
+      } catch (error) {
+        console.error("Error running simulation:", error);
+        setSimulationSnapshots([]);
+      } finally {
+        setIsSimulating(false);
       }
+    }, 0);
+  }, [globalInit, blocks, currentAge]);
 
-      // Store this day's data
-      dateMap.set(dateKey, dayData);
-
-      // Update previous values for next iteration
-      previousAssets = dayData.assets;
-      previousLiabilities = dayData.liabilities;
-
-      // Move to next day
-      currentDate.setDate(currentDate.getDate() + 1);
+  // Run simulation once on page load
+  useEffect(() => {
+    if (!isLoading) {
+      runSimulation();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
-    return dateMap;
-  }, [blocks, currentAge, currentYear]);
+  // Calculate dates for vertical indicators - memoize to prevent unnecessary re-renders
+  const verticalIndicators = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const currentAgeDate = new Date(currentYear, 0, 1);
+    const retirementAgeDate = new Date(
+      currentYear + (retirementAge - currentAge),
+      0,
+      1
+    );
+    return [
+      { date: currentAgeDate, label: `Age ${currentAge}` },
+      { date: retirementAgeDate, label: `Age ${retirementAge}` },
+    ];
+  }, [currentAge, retirementAge]);
 
-  // Build chart data from aggregated results
-  const aggregatedMap = useMemo(
-    () => aggregateResults(),
-    [blocks, currentAge, currentYear]
-  );
-
-  // Build quantities data (assets - liabilities are already cumulative from aggregation)
-  const quantitiesData: ChartDataPoint[] = Array.from(aggregatedMap).map(
-    ([dateKey, dateResult]) => {
-      const date = new Date(`${dateKey}T00:00:00Z`);
-
-      return {
-        date,
-        net_worth: dateResult.assets - dateResult.liabilities,
-      };
-    }
-  );
-
-  // Rates are not cumulative - aggregate by month since income/expenses are bursty
-  const monthlyRatesMap = new Map<
-    string,
-    { income: number; expenses: number }
-  >();
-
-  Array.from(aggregatedMap).forEach(([dateKey, dateResult]) => {
-    const date = new Date(`${dateKey}T00:00:00Z`);
-    const monthKey = `${date.getUTCFullYear()}-${String(
-      date.getUTCMonth() + 1
-    ).padStart(2, "0")}`;
-
-    const existing = monthlyRatesMap.get(monthKey) || {
-      income: 0,
-      expenses: 0,
-    };
-    monthlyRatesMap.set(monthKey, {
-      income: existing.income + dateResult.income,
-      expenses: existing.expenses + dateResult.expenses,
-    });
-  });
-
-  const ratesData: ChartDataPoint[] = Array.from(monthlyRatesMap).map(
-    ([monthKey, monthResult]) => {
-      const [year, month] = monthKey.split("-");
-      const date = new Date(parseInt(year), parseInt(month) - 1, 1);
-
-      return {
-        date,
-        income_rate: monthResult.income - monthResult.expenses,
-      };
-    }
-  );
-
-  // Calculate dates for vertical indicators
-  const currentAgeDate = new Date(currentYear, 0, 1);
-  const retirementAgeDate = new Date(
-    currentYear + (retirementAge - currentAge),
-    0,
-    1
-  );
-
-  const verticals = [
-    {
-      position: currentAgeDate.getTime(),
-      label: `Age ${currentAge}`,
-      color: "var(--color-accent-orange)",
-    },
-    {
-      position: retirementAgeDate.getTime(),
-      label: `Age ${retirementAge}`,
-      color: "var(--color-primary)",
-    },
-  ];
+  // Memoize graphs with verticals to prevent unnecessary Chart re-renders
+  const graphsWithVerticals = useMemo(() => {
+    return graphs.map((graphDef) => ({
+      ...graphDef,
+      verticals: verticalIndicators,
+    }));
+  }, [graphs, verticalIndicators]);
 
   return (
     <div className="app-page">
@@ -381,6 +332,33 @@ function AppPage() {
         <div className="header-content">
           <div className="header-logo">
             <h1 className="logo-text">PYRE</h1>
+            <button
+              className="info-button"
+              onClick={() => setIsTutorialOpen(true)}
+              aria-label="Open tutorial"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M12 16v-4m0-4h.01"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
           </div>
           <div className="secret-link-hint-stack">
             <div className="plan-id-row">
@@ -432,38 +410,246 @@ function AppPage() {
 
       <main className="app-main">
         <div className="app-content">
-          <section className="overview-card">
-            <div className="age-inputs-row">
-              <FloatingLabelInput
-                label="Current Age"
-                type="number"
-                value={currentAge}
-                onChange={(e) => setCurrentAge(Number(e.target.value))}
-              />
-              <FloatingLabelInput
-                label="Target Retirement Age"
-                type="number"
-                value={retirementAge}
-                onChange={(e) => setRetirementAge(Number(e.target.value))}
-              />
+          {/* Simulation Setup Section */}
+          <section className="simulation-setup-card">
+            <div
+              className={
+                isEditingSetup
+                  ? "setup-header-expanded setup-header"
+                  : "setup-header"
+              }
+            >
+              {isEditingSetup ? (
+                <FloatingLabelInput
+                  label="Simulation Name"
+                  type="text"
+                  value={simulationName}
+                  onChange={(e) => setSimulationName(e.target.value)}
+                  className="setup-title-input"
+                />
+              ) : (
+                <h2 className="setup-title">{simulationName}</h2>
+              )}
+              <div className="setup-buttons">
+                <button
+                  className="setup-simulate-button"
+                  onClick={runSimulation}
+                  disabled={isSimulating}
+                >
+                  {isSimulating ? (
+                    <>
+                      <span className="spinner"></span>
+                      Simulating...
+                    </>
+                  ) : (
+                    "Simulate"
+                  )}
+                </button>
+                <button
+                  className={`setup-edit-button ${
+                    isEditingSetup ? "editing" : ""
+                  }`}
+                  onClick={() => setIsEditingSetup(!isEditingSetup)}
+                >
+                  {isEditingSetup ? "Done" : "Edit"}
+                </button>
+              </div>
             </div>
 
-            <div className="graph-content">
-              <Chart
-                title="Net Worth (Assets - Liabilities)"
-                data={quantitiesData}
-                verticals={verticals}
-                graphType="line"
-              />
-            </div>
-            <div className="graph-content">
-              <Chart
-                title="Monthly Change (Income - Expenses)"
-                data={ratesData}
-                verticals={verticals}
-                graphType="line"
-              />
-            </div>
+            {isEditingSetup && (
+              <div className="setup-content">
+                <div className="age-inputs-row">
+                  <FloatingLabelInput
+                    label="Current Age"
+                    type="number"
+                    value={currentAge}
+                    onChange={(e) => setCurrentAge(Number(e.target.value))}
+                  />
+                  <FloatingLabelInput
+                    label="Target Retirement Age"
+                    type="number"
+                    value={retirementAge}
+                    onChange={(e) => setRetirementAge(Number(e.target.value))}
+                  />
+                </div>
+
+                <div className="global-init-section">
+                  <FloatingLabelTextarea
+                    label="Simulation Initialization"
+                    value={globalInit}
+                    onChange={(e) => setGlobalInit(e.target.value)}
+                    rows={6}
+                    placeholder=""
+                  />
+                </div>
+
+                <div className="graphs-config-section">
+                  <div className="graphs-config-header">
+                    <h3 className="graphs-config-title">Main Graphs</h3>
+                    <button
+                      className="add-graph-button"
+                      onClick={() =>
+                        setGraphs((prev) => [
+                          ...prev,
+                          {
+                            id: uuidv4(),
+                            title: "New Graph",
+                            frequency: "monthly",
+                            verticals: [],
+                            expressions: { line: [], stacked: [], bar: [] },
+                          },
+                        ])
+                      }
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  {graphs.map((graph, index) => (
+                    <div key={graph.id} className="graph-config-card">
+                      <div className="graph-config-header">
+                        <FloatingLabelInput
+                          label="Title"
+                          value={graph.title}
+                          onChange={(e) =>
+                            setGraphs((prev) =>
+                              prev.map((g, i) =>
+                                i === index
+                                  ? { ...g, title: e.target.value }
+                                  : g
+                              )
+                            )
+                          }
+                        />
+                        <FloatingLabelSelect
+                          label="Frequency"
+                          value={graph.frequency}
+                          onChange={(e) =>
+                            setGraphs((prev) =>
+                              prev.map((g, i) =>
+                                i === index
+                                  ? {
+                                      ...g,
+                                      frequency: e.target.value as
+                                        | "daily"
+                                        | "monthly"
+                                        | "yearly",
+                                    }
+                                  : g
+                              )
+                            )
+                          }
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="yearly">Yearly</option>
+                        </FloatingLabelSelect>
+                        <button
+                          className="delete-graph-button"
+                          onClick={() =>
+                            setGraphs((prev) =>
+                              prev.filter((_, i) => i !== index)
+                            )
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+
+                      <div className="graph-config-expressions">
+                        <FloatingLabelInput
+                          label="Line Expressions (comma-separated)"
+                          value={graph.expressions.line?.join(", ") || ""}
+                          onChange={(e) =>
+                            setGraphs((prev) =>
+                              prev.map((g, i) =>
+                                i === index
+                                  ? {
+                                      ...g,
+                                      expressions: {
+                                        ...g.expressions,
+                                        line: e.target.value
+                                          .split(",")
+                                          .map((s) => s.trim())
+                                          .filter(Boolean),
+                                      },
+                                    }
+                                  : g
+                              )
+                            )
+                          }
+                          placeholder=""
+                        />
+                        <FloatingLabelInput
+                          label="Stacked Expressions (comma-separated)"
+                          value={graph.expressions.stacked?.join(", ") || ""}
+                          onChange={(e) =>
+                            setGraphs((prev) =>
+                              prev.map((g, i) =>
+                                i === index
+                                  ? {
+                                      ...g,
+                                      expressions: {
+                                        ...g.expressions,
+                                        stacked: e.target.value
+                                          .split(",")
+                                          .map((s) => s.trim())
+                                          .filter(Boolean),
+                                      },
+                                    }
+                                  : g
+                              )
+                            )
+                          }
+                          placeholder=""
+                        />
+                        <FloatingLabelInput
+                          label="Bar Expressions (comma-separated)"
+                          value={graph.expressions.bar?.join(", ") || ""}
+                          onChange={(e) =>
+                            setGraphs((prev) =>
+                              prev.map((g, i) =>
+                                i === index
+                                  ? {
+                                      ...g,
+                                      expressions: {
+                                        ...g.expressions,
+                                        bar: e.target.value
+                                          .split(",")
+                                          .map((s) => s.trim())
+                                          .filter(Boolean),
+                                      },
+                                    }
+                                  : g
+                              )
+                            )
+                          }
+                          placeholder=""
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Main Graphs Section */}
+          <section className="overview-card">
+            {graphs.length === 0 ? (
+              <div className="empty-graphs-message">
+                <p>Add graphs in Simulation Setup to visualize your plan</p>
+              </div>
+            ) : (
+              graphsWithVerticals.map((graphDef) => (
+                <div key={graphDef.id} className="graph-content">
+                  <Chart
+                    graphDefinition={graphDef}
+                    snapshots={simulationSnapshots}
+                  />
+                </div>
+              ))
+            )}
           </section>
 
           <section className="blocks-section">
@@ -477,7 +663,6 @@ function AppPage() {
                     {
                       id: uuidv4(),
                       state: EMPTY_BLOCK_STATE,
-                      executionResults: [],
                     },
                   ])
                 }
@@ -493,9 +678,6 @@ function AppPage() {
                   onChange={(newState) =>
                     handleBlockStateChange(block.id, newState)
                   }
-                  onExecutionResultsChange={(results) =>
-                    handleBlockExecutionResults(block.id, results)
-                  }
                   onDelete={() =>
                     setBlocks((prev) => prev.filter((b) => b.id !== block.id))
                   }
@@ -505,6 +687,147 @@ function AppPage() {
           </section>
         </div>
       </main>
+
+      <Modal
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
+        title={
+          <p>
+            How to Use <span className="logo-text">PYRE</span>
+          </p>
+        }
+      >
+        <div className="tutorial-section">
+          <h3>Getting Started</h3>
+          <p>
+            PYRE is a flexible financial planning calculator that uses a simple
+            math language to build complex retirement plans. Your plan is
+            automatically saved using the unique ID in the header, so bookmark
+            this page to return to your plan anytime.
+          </p>
+        </div>
+
+        <div className="tutorial-section">
+          <h3>Simulation Setup</h3>
+          <p>
+            Click <strong>Edit</strong> in the Simulation Setup section to
+            configure:
+          </p>
+          <ul>
+            <li>
+              <strong>Simulation Name:</strong> Give your plan a custom name
+            </li>
+            <li>
+              <strong>Current Age & Retirement Age:</strong> Define your age
+              range (graphs will always show from ages 0-100)
+            </li>
+            <li>
+              <strong>Simulation Initialization:</strong> Set starting values
+              for global variables like <code>cash</code>,{" "}
+              <code>investments</code>, etc.
+            </li>
+            <li>
+              <strong>Graphs:</strong> Configure charts to visualize your
+              financial data over time. These can track any global variable.
+            </li>
+          </ul>
+          <p>
+            Click <strong>Simulate</strong> to run the calculation and see your
+            updated graphs.
+          </p>
+        </div>
+
+        <div className="tutorial-section">
+          <h3>Financial Functions</h3>
+          <p>
+            Functions represent everything that affects your financies like
+            loans, investments, or income streams. Functions run in the order
+            they are defined. Click the <strong>+</strong> button to add a new
+            function, then:
+          </p>
+          <ul>
+            <li>
+              <strong>Function inputs:</strong> Define start/end dates,
+              frequency (daily/monthly/yearly), and inputs
+            </li>
+            <li>
+              <strong>Initialization:</strong> defines the setup of local
+              variables when the block is first run.
+            </li>
+            <li>
+              <strong>Execution:</strong> Define calculations that run each
+              period (day/month/year)
+            </li>
+            <li>
+              <strong>Exports:</strong> Share variables with other blocks and
+              graphs by making them global
+            </li>
+          </ul>
+        </div>
+
+        <div className="tutorial-section">
+          <h3>Math Language Basics</h3>
+          <p>
+            Use simple mathematical expressions to define your calculations:
+          </p>
+          <ul>
+            <li>
+              <strong>Basic math:</strong> <code>+</code>, <code>-</code>,{" "}
+              <code>*</code>, <code>/</code>, <code>**</code> (power)
+            </li>
+            <li>
+              <strong>Variables:</strong> Any name that starts with a letter and
+              only contains letters, numbers, and underscores like{" "}
+              <code>cash</code>, <code>k401</code>,{" "}
+              <code>monthly_interest</code> is valid
+            </li>
+            <li>
+              <strong>Expressions:</strong> Every line of a code block must be
+              an assignment such as <code>debts = debts + 1000</code> whereas
+              graph expressions only require the right side like{" "}
+              <code>cash - debts</code>
+            </li>
+            <li>
+              <strong>Notes:</strong> Start a line with <code>#</code> to add
+              notes to your calculations
+            </li>
+          </ul>
+          <p>
+            <strong>Default inputs available in functions:</strong>{" "}
+            <code>total_periods</code>, <code>periods_from_start</code> which
+            count based on the start date and frequency of your function
+          </p>
+        </div>
+
+        <div className="tutorial-section">
+          <h3>Example: Home Loan</h3>
+          <p>The below function might calculate monthly mortgage payments:</p>
+          <ul>
+            <li>
+              <strong>Inputs:</strong> <code>down_payment</code>,{" "}
+              <code>original_principle</code>, <code>apr</code>
+            </li>
+            <li>
+              <strong>Init:</strong> Calculate payment amount, add the home's
+              value to <code>property</code>, the principle borrowed to{" "}
+              <code>debts</code>, and subtract the down payment from your cash
+            </li>
+            <li>
+              <strong>Execution:</strong> Each month, compute the portion of the
+              payment going towards <code>interest</code> and{" "}
+              <code>principle</code>, subtract the <code>principle</code> amount
+              from your <code>debts</code> and both amounts from your{" "}
+              <code>cash</code>. We finally need to keep track of the amount of
+              principle we currently have leftover.
+            </li>
+            <li>
+              <strong>Exports:</strong> You might export the{" "}
+              <code>interest_portion</code> and <code>principle_portion</code>{" "}
+              for graphing
+            </li>
+          </ul>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import "./Block.css";
 import FloatingLabelInput from "./FloatingLabelInput";
 import FloatingLabelTextarea from "./FloatingLabelTextarea";
 import FloatingLabelSelect from "./FloatingLabelSelect";
-import { runBlock, type BlockRunnerResult } from "../BlockRunner";
-import Chart, { type ChartDataPoint } from "./Chart";
+import Chart from "./Chart";
+import { type GraphDefinition, type SimulationSnapshot } from "../types";
 
 export interface BlockState {
   title: string;
@@ -12,101 +12,22 @@ export interface BlockState {
   endDate: string;
   inputs: Record<string, string>;
   init: string;
-  init_assets: string;
-  init_liabilities: string;
-  init_income: string;
-  init_expenses: string;
   frequency: "daily" | "monthly" | "yearly";
   execution: string;
-  execution_assets: string;
-  execution_liabilities: string;
-  execution_income: string;
-  execution_expenses: string;
-  graph_vars: string;
-  graph_type: "bar" | "stacked" | "line";
+  exports: string;
+  graphs: GraphDefinition[];
 }
 
 interface BlockProps {
   state: BlockState;
   onChange: (state: BlockState) => void;
   onDelete?: () => void;
-  onExecutionResultsChange?: (results: BlockRunnerResult[]) => void;
+  snapshots?: SimulationSnapshot[];
 }
 
-function Block({
-  state,
-  onChange,
-  onDelete,
-  onExecutionResultsChange,
-}: BlockProps) {
+function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-
-  // Store execution results
-  const [executionResults, setExecutionResults] = useState<BlockRunnerResult[]>(
-    []
-  );
-
-  // Run block execution whenever inputs or configuration changes
-  // Debounced to wait 1 second after last change before executing
-  useEffect(() => {
-    // Only run if we have valid dates
-    console.log("Use effect");
-    if (!state.startDate || !state.endDate) {
-      setExecutionResults([]);
-      return;
-    }
-
-    // Set up debounce timer
-    const timeoutId = setTimeout(() => {
-      // Convert input values to numbers
-      const numericInputs: Record<string, number> = {};
-      for (const [key, value] of Object.entries(state.inputs)) {
-        const numValue = parseFloat(value);
-        numericInputs[key] = isNaN(numValue) ? 0 : numValue;
-      }
-
-      try {
-        const results = runBlock({
-          startDate: state.startDate,
-          endDate: state.endDate,
-          frequency: state.frequency,
-          inputs: numericInputs,
-          initCalculations: state.init,
-          initQuantities: {
-            assets: state.init_assets,
-            liabilities: state.init_liabilities,
-            income: state.init_income,
-            expenses: state.init_expenses,
-          },
-          executionCalculations: state.execution,
-          executionQuantities: {
-            assets: state.execution_assets,
-            liabilities: state.execution_liabilities,
-            income: state.execution_income,
-            expenses: state.execution_expenses,
-          },
-          graphVars: state.graph_vars
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-        });
-        setExecutionResults(results);
-        if (onExecutionResultsChange) {
-          onExecutionResultsChange(results);
-        }
-      } catch (error) {
-        console.error("Error running block:", error);
-        setExecutionResults([]);
-        if (onExecutionResultsChange) {
-          onExecutionResultsChange([]);
-        }
-      }
-    }, 1000);
-
-    // Cleanup function to cancel timer if state changes again
-    return () => clearTimeout(timeoutId);
-  }, [state]);
 
   const handleStateChange = (
     field: keyof BlockState,
@@ -151,47 +72,7 @@ function Block({
     return /^[a-zA-Z_,]*$/.test(value);
   };
 
-  // Prepare chart data from execution results
-  const quantitiesData: ChartDataPoint[] = executionResults.map((r) => ({
-    date: new Date(r.date),
-    worth: r.assets - r.liabilities,
-  }));
-
-  const ratesData: ChartDataPoint[] = executionResults.map((r) => ({
-    date: new Date(r.date),
-    change: r.income - r.expenses,
-  }));
-
   const inputNames = Object.keys(state.inputs);
-  const graphVarNames = state.graph_vars
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  // Prepare custom graph data from graph variables
-  const customGraphData: ChartDataPoint[] = executionResults.map((r) => {
-    const dataPoint: ChartDataPoint = {
-      date: new Date(r.date),
-    };
-    // Add each graph variable as a series
-    graphVarNames.forEach((varName) => {
-      if (varName in r && typeof r[varName] === "number") {
-        dataPoint[varName] = r[varName] as number;
-      } else {
-        dataPoint[varName] = 0;
-      }
-    });
-    return dataPoint;
-  });
-
-  // Generate colors for multiple graph variables (cycling through a palette)
-  const graphColors = [
-    "var(--color-accent-orange)",
-    "var(--color-primary)",
-    "#9c27b0", // purple
-    "#2196f3", // blue
-    "#ff5722", // deep orange
-  ];
 
   return (
     <div className="block">
@@ -295,42 +176,7 @@ function Block({
                   label="Initialization"
                   value={state.init}
                   onChange={(e) => handleStateChange("init", e.target.value)}
-                  className="block-form-textarea"
-                  rows={6}
-                />
-              </div>
-
-              <div className="block-form-effects-row">
-                <span className="block-form-effects-label">
-                  Initial addends:
-                </span>
-                <FloatingLabelInput
-                  label="Assets"
-                  value={state.init_assets}
-                  onChange={(e) =>
-                    handleStateChange("init_assets", e.target.value)
-                  }
-                />
-                <FloatingLabelInput
-                  label="Liabilities"
-                  value={state.init_liabilities}
-                  onChange={(e) =>
-                    handleStateChange("init_liabilities", e.target.value)
-                  }
-                />
-                <FloatingLabelInput
-                  label="Income"
-                  value={state.init_income}
-                  onChange={(e) =>
-                    handleStateChange("init_income", e.target.value)
-                  }
-                />
-                <FloatingLabelInput
-                  label="Expenses"
-                  value={state.init_expenses}
-                  onChange={(e) =>
-                    handleStateChange("init_expenses", e.target.value)
-                  }
+                  rows={9}
                 />
               </div>
 
@@ -341,92 +187,36 @@ function Block({
                   onChange={(e) =>
                     handleStateChange("execution", e.target.value)
                   }
-                  className="block-form-textarea"
-                  rows={6}
+                  rows={9}
                 />
               </div>
 
-              <div className="block-form-effects-row">
-                <span className="block-form-effects-label">
-                  Execution addends:
-                </span>
+              <div className="block-form-group">
                 <FloatingLabelInput
-                  label="Assets"
-                  value={state.execution_assets}
+                  label="Exported Variables"
+                  value={state.exports}
                   onChange={(e) =>
-                    handleStateChange("execution_assets", e.target.value)
+                    validateIdentifier(e.target.value) &&
+                    handleStateChange("exports", e.target.value)
                   }
+                  placeholder=""
                 />
-                <FloatingLabelInput
-                  label="Liabilities"
-                  value={state.execution_liabilities}
-                  onChange={(e) =>
-                    handleStateChange("execution_liabilities", e.target.value)
-                  }
-                />
-                <FloatingLabelInput
-                  label="Income"
-                  value={state.execution_income}
-                  onChange={(e) =>
-                    handleStateChange("execution_income", e.target.value)
-                  }
-                />
-                <FloatingLabelInput
-                  label="Expenses"
-                  value={state.execution_expenses}
-                  onChange={(e) =>
-                    handleStateChange("execution_expenses", e.target.value)
-                  }
-                />
-              </div>
-
-              <div className="block-form-row">
-                <div className="block-form-inline-group block-form-inline-group-flex">
-                  <FloatingLabelInput
-                    label="Graph Variables"
-                    value={state.graph_vars}
-                    onChange={(e) =>
-                      validateIdentifier(e.target.value) &&
-                      handleStateChange("graph_vars", e.target.value)
-                    }
-                  />
-                </div>
-
-                <div className="block-form-inline-group">
-                  <FloatingLabelSelect
-                    label="Graph Type"
-                    value={state.graph_type}
-                    onChange={(e) =>
-                      handleStateChange("graph_type", e.target.value)
-                    }
-                  >
-                    <option value="bar">Bar</option>
-                    <option value="stacked">Stacked</option>
-                    <option value="line">Line</option>
-                  </FloatingLabelSelect>
-                </div>
               </div>
             </div>
           )}
 
-          <div className="block-section">
-            <Chart title="" data={quantitiesData} graphType="line" />
-          </div>
-
-          <div className="block-section">
-            <Chart title="" data={ratesData} graphType="line" />
-          </div>
-
-          {graphVarNames.length > 0 && customGraphData.length > 0 && (
-            <div className="block-section">
-              <Chart
-                title={`Custom Variables (${state.graph_type})`}
-                data={customGraphData}
-                graphType={state.graph_type}
-                lineColors={graphColors}
-              />
-            </div>
-          )}
+          {!isEditMode &&
+            state.graphs &&
+            state.graphs.length > 0 &&
+            snapshots && (
+              <>
+                {state.graphs.map((graph) => (
+                  <div key={graph.id} className="block-section">
+                    <Chart graphDefinition={graph} snapshots={snapshots} />
+                  </div>
+                ))}
+              </>
+            )}
         </div>
       )}
     </div>
@@ -434,4 +224,3 @@ function Block({
 }
 
 export default Block;
-export type { BlockRunnerResult };

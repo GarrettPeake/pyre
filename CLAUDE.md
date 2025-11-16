@@ -11,7 +11,7 @@ To start, the user defines their current age and target retirement age, then the
 30, 62
 
 -- Init
-401k = 100000
+k401 = 100000
 cash = 100000
 investments = 200000
 bonds = 100000
@@ -21,8 +21,8 @@ debts = 0
 -- Graphs (these graphs have vertical lines for the current and retirement ages)
 Net Worth:
     frequency: daily
-    line: 401k + cash + investments + bonds + property - debts
-    stacked: 401k,cash,investments,bonds,property,-debts
+    line: k401 + cash + investments + bonds + property - debts
+    stacked: k401,cash,investments,bonds,property,-debts
 Mortgage (Interest vs Principle contributions):
     frequency: daily
     line: interest_portion, principle_portion
@@ -49,15 +49,13 @@ monthly_interest = apr / 12
 payment = original_principle * (monthly_interest * (1 + monthly_interest)^(payments))/((1+monthly_interest)^(payments)-1)
 debts = debts + original_principle
 property = property + asset_price
-expenses = expenses + down_payment
 
 -- Execution
 interest_portion = current_principle * monthly_interest
-principle_portion = payment - interest_Portion
+principle_portion = payment - interest_portion
 current_principle = current_principle - principle_portion
 # Comments use a hashtag
-liabilities = liabilities - principle_portion
-expenses = expenses + payment
+debts = debts - principle_portion
 
 -- Export (variables to be added to the global scope to be used by the following blocks)
 interest_portion, principle_portion
@@ -126,8 +124,10 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
 
 2. **App Page** (`src/AppPage.tsx`)
 
-   - Main application interface with sticky header containing PYRE logo, plan ID with save status indicator, and GitHub/Ko-Fi links
+   - Main application interface with sticky header containing PYRE logo with info icon, plan ID with save status indicator, and GitHub/Ko-Fi links
+   - Info icon (next to logo) opens tutorial modal with comprehensive usage instructions
    - Receives plan ID from URL params
+   - Simulation Setup card with editable simulation name (replaces the static "Simulation Setup" title)
    - Overview card containing:
      - Age inputs row with FloatingLabelInput components: Current Age and Target Retirement Age (default 25 and 65)
      - Main charts defined by the user with vertical lines indicting the current and target retirement ages
@@ -137,26 +137,31 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
    **Backend Integration:**
 
    - On page load, fetches plan data from backend using the planId via `/api/get_plan/<planId>`
-   - If no saved plan exists, uses default example block configuration
-   - Saves plan data when user clicks "Save" button in Block edit mode
-   - Save process: Block calls `onSave` callback → AppPage updates block state → saves to backend via `/api/save_plan/<planId>`
+   - If no saved plan exists, uses default example block configuration with simulationName "My Retirement Plan"
+   - Automatically saves plan data (simulationName, currentAge, retirementAge, globalInit, graphs, blocks) on changes with 1-second debounce
    - Save status indicator (checkmark icon) next to planId in header:
      - Green when data is saved
-     - Grey when unsaved changes exist (block execution results change)
-   - Only saves block configurations (initialState), not computed execution results
+     - Grey when unsaved changes exist
+   - SavedPlanData includes: simulationName, currentAge, retirementAge, globalInit, graphs, blocks[]
 
-   **Data Aggregation:**
+   **Simulation Execution:**
 
-   - Maintains array of BlockData objects containing block configuration and execution results
-   - Each block reports its execution results via `onExecutionResultsChange` callback
-   - Aggregates data across all blocks over 100-year span (ages 0-100):
-     - First creates a lookup map of all block execution results keyed by date
-     - Iterates through every single date (365 days per year) from birth to age 100
-     - For each date: inherits assets and liabilities from the previous day, starts with income and expenses at 0
-     - Checks if any blocks have execution results for that date and adds them if present
-     - Assets and liabilities accumulate day-by-day as running totals (quantities)
-     - Income and expenses apply only to their specific dates (rates)
-   - Charts automatically update when any block's execution results change
+   - Maintains array of BlockData objects containing block configurations
+   - Uses SimulationEngine to run centralized simulation, triggered via:
+     - Automatically once when page finishes loading
+     - Manually via "Simulate" button in Simulation Setup panel header
+   - "Simulate" button shows spinner and "Simulating..." text while running, and is disabled during execution
+   - Simulation produces SimulationSnapshot[] containing global context at each date
+   - Global variables (defined in globalInit) persist throughout simulation and are modified by blocks through exports
+   - Block-local variables persist only within that block's executions
+   - Charts receive snapshots and evaluate expressions to render visualizations
+   - All execution is coordinated through runGlobalSimulation(), not individual block execution
+
+   **Performance Optimizations:**
+
+   - Graph definitions with vertical indicators are memoized using `useMemo` to prevent unnecessary object recreation (`src/pages/AppPage.tsx:303-324`)
+   - Charts only re-render when simulation snapshots change, not on every state update
+   - Vertical indicators (current age, retirement age) are computed once and reused across all graphs
 
 ### Components
 
@@ -175,14 +180,14 @@ A reusable input component with animated floating label behavior. The label floa
 
 **FloatingLabelTextarea Component** (`src/FloatingLabelTextarea.tsx`)
 
-A reusable textarea component with animated floating label behavior, sharing the same CSS as FloatingLabelInput.
+A reusable textarea component with animated floating label behavior, sharing the same CSS as FloatingLabelInput. Textareas are styled with monospace font (Courier New) for code editing.
 
 **Props:**
 
 - `label`: Label text to display
 - `value`: Textarea value
 - `onChange`: Change handler
-- `className`: Optional CSS class for the textarea element
+- `className`: Optional CSS class for the textarea element (not typically needed as default styles are comprehensive)
 - `rows`: Number of rows (default: 4)
 - `placeholder`: Optional placeholder text
 
@@ -198,42 +203,83 @@ A reusable select component with animated floating label behavior, sharing the s
 - `className`: Optional CSS class for the select element
 - `children`: React nodes (typically `<option>` elements)
 
-**Chart Component** (`src/Chart.tsx`)
+**Modal Component** (`src/components/Modal.tsx`)
 
-A reusable, D3-powered chart component for rendering financial data visualizations. Used throughout the application for displaying quantities and rates charts in both the main AppPage and individual Block components.
+A reusable modal/dialog component with overlay and close functionality. Used to display tutorial and informational content.
 
 **Props:**
 
-- `title`: Chart title (displayed above the chart)
-- `data`: Array of ChartDataPoint objects with `date: Date` and any number of numeric data series
-- `verticals`: Optional array of vertical indicator lines with position (timestamp), label, and color
-- `graphType`: Chart type - currently supports "line" (bar and stacked to be implemented)
-- `lineColors`: Optional array of colors for multiple data series (defaults to orange accent color)
+- `isOpen`: Boolean controlling modal visibility
+- `onClose`: Callback function when modal is closed
+- `title`: Modal title text
+- `children`: React nodes for modal body content
 
 **Features:**
 
-- Automatically scales axes based on data domain with padding
-- Supports multiple data series in a single chart
-- Renders vertical indicator lines with labels (e.g., current age, retirement age)
-- Displays placeholder when no data is available
-- Fully responsive with consistent styling across the application
+- Click overlay to close
+- Press Escape key to close
+- Prevents body scroll when open
+- Auto-focuses close button
+- Includes close button (X) in header
 
-**Block Component** (`src/Block.tsx`)
+**Usage in AppPage:**
 
-A fully-featured collapsible card component for displaying and configuring financial blocks. Uses FloatingLabelInput, FloatingLabelTextarea, and FloatingLabelSelect components for all form inputs. The component automatically executes block calculations using the BlockRunner utility and displays results using the Chart component.
+- Info icon button in header (next to PYRE logo) opens tutorial modal
+- Tutorial modal contains comprehensive documentation on:
+  - Getting started and plan auto-save
+  - Simulation setup (name, ages, global init, graphs)
+  - Financial functions (blocks) configuration
+  - Math language syntax and operators
+  - Example: home loan block walkthrough
+  - Tips for effective use
+
+**Chart Component** (`src/components/Chart.tsx`)
+
+A reusable, D3-powered chart component for rendering financial data visualizations. Supports simultaneous rendering of multiple display types (line, stacked area, and bar charts) in a single chart. Wrapped in `React.memo` for performance optimization to prevent unnecessary re-renders.
+
+**Props:**
+
+- `graphDefinition`: GraphDefinition object containing title, frequency, expressions, and vertical indicators
+- `snapshots`: Array of SimulationSnapshot objects containing global context at each date
+
+**Key Features:**
+
+- **Expression Evaluation**: Evaluates mathematical expressions (e.g., `"k401 + cash - debts"`) using snapshot context data via MathLangUtils
+- **Frequency Sampling**: Automatically samples snapshots based on frequency (daily/monthly/yearly) to match block execution patterns
+- **Multi-Type Rendering**: Supports simultaneous rendering of multiple visualization types:
+  - **Line series**: Multiple line charts with distinct colors
+  - **Stacked area charts**: Diverging stacked chart - positive values stack upward from zero, negative values stack downward from zero
+  - **Bar charts**: Grouped bars with support for multiple series
+- **Layered Rendering**: Bars (bottom) → Stacked areas (middle) → Lines (top) for optimal visibility
+- **Color Management**: Uses coordinated color palette from CSS variables (orange, green, and accent colors)
+- **Vertical Indicators**: Renders vertical lines with labels (e.g., current age, retirement age) from GraphDefinition
+- **Automatic Scaling**: Axes scale based on all data values with 10% padding
+- **Error Handling**: Gracefully handles expression evaluation errors (defaults to 0)
+- **Performance**: Memoized with `React.memo` to only re-render when `graphDefinition` or `snapshots` props change
+
+**Data Flow:**
+
+1. Accepts `SimulationSnapshot[]` from SimulationEngine
+2. Samples snapshots based on `graphDefinition.frequency`
+3. Evaluates all expressions (line + stacked + bar) for each sampled snapshot
+4. Builds `ChartDataPoint[]` with evaluated values
+5. Renders using D3 with appropriate visualization types
+
+**Internal Functions:**
+
+- `sampleSnapshots()`: Filters snapshots to match frequency (daily/monthly/yearly)
+- `evaluateExpressionsForSnapshot()`: Evaluates all expressions using snapshot context
+- `buildChartData()`: Orchestrates sampling and evaluation to build chart data
+
+**Block Component** (`src/components/Block.tsx`)
+
+A streamlined collapsible card component for displaying and configuring financial blocks. Uses FloatingLabelInput, FloatingLabelTextarea, and FloatingLabelSelect components for all form inputs. Blocks no longer execute independently - execution is handled centrally by SimulationEngine in AppPage, and blocks receive simulation snapshots for rendering their custom graphs.
 
 **State Management:**
 
-- Maintains comprehensive block state including: title, date range (startDate/endDate), inputs, init calculations, init quantities/rates (assets, liabilities, income, expenses), execution frequency (daily/monthly/yearly), execution calculations, execution quantities/rates, graph variables, and graph type (bar/stacked/line)
-- Input values are tracked separately from input definitions, allowing users to configure which inputs are required vs setting their actual values
-- Stores execution results from BlockRunner and re-executes whenever inputs or configuration changes
-- Supports identifier validation for variable names (only allows `[a-zA-Z_]*` pattern)
-
-**Execution:**
-
-- Uses `useEffect` to automatically run block execution via BlockRunner whenever dates, frequency, calculations, or input values change
-- Converts string input values to numbers before passing to BlockRunner
-- Handles errors gracefully and displays empty state when dates are not set
+- Maintains block state including: title, date range (startDate/endDate), inputs (Record<string, string>), init code, execution frequency (daily/monthly/yearly), execution code, exports (comma-separated variable names), and graphs (GraphDefinition[])
+- Input values are tracked within the inputs object, allowing users to configure which inputs are required and set their actual values
+- Supports identifier validation for variable names (only allows `[a-zA-Z_,]*` pattern)
 
 **UI Modes:**
 
@@ -242,7 +288,7 @@ A fully-featured collapsible card component for displaying and configuring finan
   - Title becomes editable inline in the header
   - Comprehensive configuration form appears with all block parameters
   - Edit button becomes highlighted green "Done" button
-  - Input fields are disabled (edit mode is for configuration only)
+  - Input fields remain enabled in edit mode
 
 **Content Sections (when expanded):**
 
@@ -250,53 +296,79 @@ A fully-featured collapsible card component for displaying and configuring finan
    - Single row with Start Date, End Date, Frequency, and Inputs (comma-separated) - dates use HTML5 date inputs
    - Initialization textarea for init calculations
    - Execution textarea for per-period calculations
-   - Bottom row with Graph Variables (comma-separated) and Graph Type selector
-2. **Inputs**: Dynamic grid of input fields based on comma-separated inputs configuration (disabled in edit mode)
-3. **Quantities Chart**: Rendered using Chart component, showing Assets - Liabilities over time
-4. **Rates Chart**: Rendered using Chart component, showing Income - Expenses over time
-5. **Custom Variables Graph**: Rendered using Chart component when graph variables are defined, displays all specified graph variables as separate series with different colors, supports line/bar/stacked types (currently line only)
+   - Exported Variables input for comma-separated list of variables to export to global scope
+2. **Inputs**: Dynamic grid of input fields based on comma-separated inputs configuration (shown in header row)
+3. **Custom Graphs**: When not in edit mode and graphs are defined, renders each graph using the Chart component with simulation snapshots
 
 **Props:**
 
-- `initialState`: Optional partial BlockState for pre-populating block configuration
+- `state`: BlockState object containing all block configuration
+- `onChange`: Callback invoked when block state changes
 - `onDelete`: Optional callback when Delete button is clicked
-- `onExecutionResultsChange`: Optional callback invoked with BlockRunnerResult[] whenever execution results change
-- `onSave`: Optional callback invoked with updated BlockState when Save button is clicked (exiting edit mode)
+- `snapshots`: Optional SimulationSnapshot[] array from SimulationEngine for rendering graphs
 
 **Exports:**
 
 - `Block` (default): The Block component
-- `BlockRunnerResult` (type): Type definition for execution results, exported for use by AppPage
+- `BlockState` (type): Type definition for block configuration state
 
-**BlockRunner Utility** (`src/BlockRunner.ts`)
+**SimulationEngine Module** (`src/SimulationEngine.ts`)
 
-A utility module that executes financial block calculations and returns computed values for each time period.
+The centralized execution engine that orchestrates the complete financial simulation. This module replaces the distributed per-block execution model with a unified approach that maintains global context and enables variable sharing across blocks.
 
 **Key Functions:**
 
-- `runBlock(input: BlockRunnerInput): BlockRunnerResult[]` - Main execution function that processes a block configuration and returns results for each period
+- `runGlobalSimulation(input: SimulationInput): SimulationSnapshot[]` - Main function that executes the complete simulation and returns snapshots of global context at each date
+
+**Types:**
+
+- `SimulationSnapshot` - Represents global context state at a specific date (includes date string and context object)
+- `SimulationInput` - Configuration for simulation including globalInit code, blocks array, birth date, current age, and end age
+
+**Execution Algorithm:**
+
+1. **Global Init Phase**: Execute globalInit code once to populate global context with starting variables (e.g., k401, cash, investments)
+2. **Block Init Phase**: For each block in order:
+   - Create block-local context with block inputs
+   - Combine with global context and default inputs (total_periods, periods_from_start)
+   - Execute block's init code
+   - Export specified variables to global context
+   - Persist block-local variables across that block's executions
+3. **Time Iteration Phase**: Iterate every day from birth to endAge (typically 100):
+   - For each eligible block (based on date range and frequency):
+     - Restore block-local context
+     - Combine with global context and updated default inputs
+     - Execute block's execution code
+     - Export specified variables to global context
+     - Update block-local context for next execution
+   - Store snapshot of complete global context for that date
+4. **Return**: Array of SimulationSnapshot objects, one per day
+
+**Context Management:**
+
+- **Global context**: Single shared object persisting across entire simulation, modified by blocks through exports
+- **Block-local context**: One per block, persists across that block's execution periods only
+- **Exports**: Specified variables (comma-separated) copied from block-local to global context after each execution
+- **Default inputs**: Auto-computed values (total_periods, periods_from_start) injected each execution
+
+**MathLangUtils Utility** (`src/MathLangUtils.ts`)
+
+A utility module providing secure math language evaluation with strict character restrictions to prevent code injection. Used by the SimulationEngine and Chart component for expression evaluation.
+
+**Key Functions:**
+
+- `runBlock(input: BlockRunnerInput): BlockRunnerResult[]` - Legacy function for per-block execution (deprecated in favor of SimulationEngine)
 - `calculateTotalPeriods()` - Calculates number of execution periods based on date range and frequency
 - `calculatePeriodDate()` - Computes the date for a specific period index
-- `executeCode()` - Safely executes JavaScript code with security restrictions (disallows `.{}[]'"` characters)
-- `evaluateExpression()` - Evaluates a single mathematical expression and returns numeric result
-
-**Execution Flow:**
-
-1. Parses start/end dates and calculates total periods based on frequency (daily/monthly/yearly)
-2. Creates execution context with user-provided inputs and default inputs (total_months, months_since_start, etc.)
-3. Runs initialization calculations once to set up variables
-4. Initializes quantities (assets, liabilities) and rates (income, expenses) from init expressions
-5. For each period:
-   - Updates period-specific context variables (months_since_start, years_since_start, etc.)
-   - Executes per-period calculations
-   - Evaluates execution addends for assets, liabilities, income, expenses
-   - Accumulates values and stores result with date
-6. Returns array of results containing date, assets, liabilities, income, expenses, and any graph variables
+- `executeCode()` - Safely executes JavaScript code with security restrictions (internal)
+- `evaluateExpression(expr: string, context: Record<string, number>): number` - **[EXPORTED]** Evaluates a single mathematical expression and returns numeric result, used by Chart component for expression evaluation
 
 **Security:**
 
 - All code execution is sandboxed using `Function()` constructor
-- Dangerous characters are explicitly disallowed to prevent object/array access and code injection
+- Dangerous characters are explicitly disallowed: `{ } [ ] ' " \` / : #`
+- Periods must be followed by digits (decimal numbers only) to prevent property access
+- Comment lines (starting with `#`) are filtered out before execution
 - Expressions are wrapped in try-catch to handle errors gracefully
 
 ### Styling
@@ -310,6 +382,46 @@ The project uses a centralized design system defined in `src/variables.css` with
 - CSS custom properties for spacing, typography, shadows, and border radius
 - All component styles are kept in separate `.css` files (never inline in TypeScript)
 
+### Default Example Configuration
+
+When users select "Start with examples" or load a plan that doesn't exist, the application provides a comprehensive default configuration demonstrating the new architecture (`src/pages/AppPage.tsx:73-146`):
+
+**Global Initialization** establishes a diversified starting portfolio:
+
+```
+k401 = 100000
+cash = 100000
+investments = 200000
+bonds = 100000
+property = 0
+debts = 0
+```
+
+**Main Graphs** visualize the complete financial picture:
+
+1. **Net Worth**: Shows total net worth as a line and breaks down all assets/debts as stacked areas
+   - Line: `k401 + cash + investments + bonds + property - debts`
+   - Stacked: `k401, cash, investments, bonds, property, -debts`
+   - Frequency: Monthly
+2. **Mortgage (Interest vs Principle)**: Tracks mortgage payment breakdown using exported block variables
+   - Line: `interest_portion, principle_portion`
+   - Frequency: Monthly
+
+**Default Block** demonstrates a 30-year home loan (2025-2055):
+
+- **Inputs**: `down_payment` (25000), `original_principle` (175000), `apr` (0.06)
+- **Init**: Calculates loan parameters, adds to property and debts
+- **Execution**: Computes monthly interest/principle portions, reduces debt
+- **Exports**: `interest_portion`, `principle_portion` for use in graphs and other blocks
+- **Block Graph**: Visualizes the interest vs principle portions over time
+
+This example showcases:
+
+- Direct manipulation of global variables (no hardcoded categories)
+- Variable exports enabling cross-block communication
+- Multiple visualization types (line + stacked areas)
+- Realistic financial modeling with proper amortization math
+
 ### Dependencies
 
 - **D3.js** (`d3`, `@types/d3`) - Used for all graph visualizations throughout the application
@@ -320,6 +432,7 @@ The project uses a centralized design system defined in `src/variables.css` with
 - Always use `npm install` to get new dependencies rather than directly adding them to the package.json
 - Never create temporary files
 - Never place CSS inside the typescript files, it must all be kept within .css files
-- Never run `npm run dev` or the like, just instruct the user that the changes are ready
+- Never run dev or build commands, just instruct the user to check that your work succeeded by telling them what to look for
 - Your task cannot be considered complete until you have reflected the work you did in ./CLAUDE.md. Your changes should be concise, highly targeted, and update any now-outdated information.
 - Do not make up CSS variables, if you need to know what colors are available in the palette, you must read variables.css
+- You have access to src/types.ts please use it when following TypeScript best practices
