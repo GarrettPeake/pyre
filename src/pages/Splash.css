@@ -1,0 +1,194 @@
+.splash-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    135deg,
+    var(--color-primary-green-light) 0%,
+    var(--color-primary-green) 100%
+  );
+}
+
+body {
+  background: linear-gradient(
+    135deg,
+    var(--color-primary-green-light) 0%,
+    var(--color-primary-green) 100%
+  );
+}
+
+.hero-banner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+}
+
+.hero-content {
+  width: 100%;
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero-header {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--spacing-lg);
+}
+
+.hero-title-section {
+  width: 33.333%;
+  text-align: left;
+}
+
+.pyre-logo {
+  font-size: var(--font-size-5xl);
+  font-weight: 700;
+  color: var(--color-accent-orange);
+  text-shadow: var(--shadow-orange);
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-bottom: var(--spacing-xs);
+}
+
+.pyre-subtitle {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-secondary);
+  margin: 0;
+  margin-top: -25px;
+  font-weight: 400;
+}
+
+.app-preview {
+  background: var(--color-bg-secondary);
+  border: 2px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-2xl);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.app-preview img {
+  max-width: 100%;
+  height: auto;
+  opacity: 0.8;
+}
+
+.hero-features {
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-xl);
+  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.hero-features::before,
+.hero-features::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-gray-400);
+}
+
+.cta-buttons {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.cta-button {
+  padding: var(--spacing-md) var(--spacing-xl);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-md);
+}
+
+.cta-button.primary {
+  background: var(--color-accent-orange);
+  color: var(--color-text-light);
+}
+
+.cta-button.primary:hover {
+  background: var(--color-accent-orange-dark);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.cta-button.secondary {
+  background: var(--color-white);
+  color: var(--color-text-primary);
+  border: 2px solid var(--color-gray-300);
+}
+
+.cta-button.secondary:hover {
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-400);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.hero-links {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+.github-logo {
+  height: 30px;
+}
+
+.kofi-logo {
+  height: 35px;
+}
+
+.hero-link {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  transition: color 0.2s ease;
+}
+
+.hero-link:hover {
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 768px) {
+  .hero-title-section {
+    width: 100%;
+    text-align: center;
+  }
+
+  .pyre-logo {
+    font-size: var(--font-size-4xl);
+  }
+
+  .pyre-subtitle {
+    font-size: var(--font-size-base);
+  }
+
+  .cta-buttons {
+    flex-direction: column;
+    width: 100%;
+    max-width: 300px;
+  }
+
+  .cta-button {
+    width: 100%;
+  }
+
+  .app-preview {
+    min-height: 200px;
+  }
+}

@@ -1,0 +1,84 @@
+/* Floating label styles */
+.floating-input-container {
+  position: relative;
+  width: 100%;
+}
+
+.floating-input-container:has(input[type="date"]) {
+  width: fit-content;
+}
+
+.floating-input-container input,
+.floating-input-container textarea {
+  box-sizing: border-box;
+}
+
+.floating-label {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--spacing-sm);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.floating-input-field {
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  min-width: 50px;
+  width: 100%;
+}
+
+.floating-label-text {
+  transition: all 0.15s ease-out;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.floating-input-container input:focus + .floating-label .floating-label-text,
+.floating-input-container
+  input:not([value=""])
+  + .floating-label
+  .floating-label-text,
+.floating-input-container textarea:focus + .floating-label .floating-label-text,
+.floating-input-container
+  textarea:not([value=""])
+  + .floating-label
+  .floating-label-text {
+  font-size: var(--font-size-xs);
+  transform: translate(-4px, -100%);
+  background-color: var(--color-white);
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.floating-input-container input[type="date"] {
+  width: fit-content;
+}
+
+.floating-input-container input:focus + .floating-label .floating-label-text,
+.floating-input-container
+  textarea:focus
+  + .floating-label
+  .floating-label-text {
+  color: var(--color-primary);
+}
+
+.floating-input-container textarea + .floating-label {
+  align-items: flex-start;
+  padding-top: var(--spacing-xs);
+}
+
+.floating-label-text-always-float {
+  font-size: var(--font-size-xs);
+  transform: translate(-4px, -100%);
+  background-color: var(--color-white);
+  padding-left: 4px;
+  padding-right: 4px;
+}

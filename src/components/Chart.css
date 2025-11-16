@@ -1,0 +1,25 @@
+.chart-container {
+  width: 100%;
+}
+
+.chart-title {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-placeholder {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--border-radius-md);
+}
