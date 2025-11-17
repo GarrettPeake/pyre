@@ -159,7 +159,6 @@
 /* Main content */
 .app-main {
   flex: 1;
-  padding: var(--spacing-md);
 }
 
 .app-content {
@@ -171,6 +170,7 @@
 .simulation-setup-card {
   background: var(--color-white);
   padding: var(--spacing-md);
+  margin-top: var(--spacing-sm);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   margin-bottom: var(--spacing-md);
@@ -370,7 +370,7 @@
   padding: var(--spacing-md);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
 }
 
 .empty-graphs-message {
@@ -430,7 +430,8 @@
 
 /* Blocks section */
 .blocks-section {
-  margin-top: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
 }
 
 .blocks-header {
@@ -468,4 +469,81 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+}
+
+/* Responsive side-by-side layout for wide screens */
+@media (min-width: 1750px) {
+  .app-header {
+    height: 90px;
+  }
+
+  .app-main {
+    height: calc(100vh - 90px);
+    max-height: calc(100vh - 90px);
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .header-content {
+    max-width: 1650px;
+  }
+
+  .app-content {
+    max-width: 1650px;
+    height: calc(100vh - 90px);
+    max-height: calc(100vh - 90px);
+    display: flex;
+    flex-direction: row;
+    gap: var(--spacing-md);
+    box-sizing: border-box;
+  }
+
+  /* Left column: simulation setup and charts wrapper */
+  .left-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    min-height: 0;
+    margin-top: var(--spacing-md);
+    overflow-y: auto;
+  }
+
+  .simulation-setup-card {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .overview-card {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  /* Right column: blocks - strict height container */
+  .blocks-section {
+    flex: 1;
+    margin-top: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .blocks-header {
+    flex-shrink: 0;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .blocks-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    padding-right: var(--spacing-xs);
+  }
+
+  .blocks-list > * {
+    flex-shrink: 0;
+  }
 }

@@ -449,8 +449,10 @@ function AppPage() {
 
       <main className="app-main">
         <div className="app-content">
-          {/* Simulation Setup Section */}
-          <section className="simulation-setup-card">
+          {/* Left Column: Simulation Setup and Graphs */}
+          <div className="left-column">
+            {/* Simulation Setup Section */}
+            <section className="simulation-setup-card">
             <div
               className={
                 isEditingSetup
@@ -691,7 +693,9 @@ function AppPage() {
               ))
             )}
           </section>
+          </div>
 
+          {/* Right Column: Financial Functions */}
           <section className="blocks-section">
             <div className="blocks-header">
               <h2 className="blocks-title">Financial Functions</h2>

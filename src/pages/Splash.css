@@ -37,31 +37,31 @@ body {
 .hero-header {
   width: 100%;
   display: flex;
-  justify-content: center;
-  margin-bottom: var(--spacing-lg);
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-2xl);
 }
 
 .hero-title-section {
-  width: 33.333%;
-  text-align: left;
+  width: 100%;
+  text-align: center;
+  margin-bottom: var(--spacing-2xl);
 }
 
-.pyre-logo {
+.hero-title {
+  font-size: var(--font-size-lg);
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin: 0;
+  margin-bottom: var(--spacing-md);
+}
+
+.hero-title-pyre {
   font-size: var(--font-size-5xl);
   font-weight: 700;
   color: var(--color-accent-orange);
   text-shadow: var(--shadow-orange);
   letter-spacing: 0.05em;
-  margin: 0;
-  margin-bottom: var(--spacing-xs);
-}
-
-.pyre-subtitle {
-  font-size: var(--font-size-lg);
-  color: var(--color-text-secondary);
-  margin: 0;
-  margin-top: -25px;
-  font-weight: 400;
 }
 
 .app-preview {
@@ -86,7 +86,7 @@ body {
 .hero-features {
   font-size: var(--font-size-md);
   color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-xl);
+  margin: 0;
   text-align: center;
   display: flex;
   align-items: center;
@@ -101,15 +101,9 @@ body {
   background: var(--color-gray-400);
 }
 
-.cta-buttons {
-  display: flex;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
-}
-
 .cta-button {
-  padding: var(--spacing-md) var(--spacing-xl);
-  font-size: var(--font-size-lg);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-base);
   font-weight: 600;
   border-radius: var(--radius-md);
   transition: all 0.2s ease;

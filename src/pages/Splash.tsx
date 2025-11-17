@@ -15,10 +15,12 @@ function Splash() {
       <div className="hero-banner">
         <div className="hero-content">
           <div className="hero-header">
-            <div className="hero-title-section">
-              <h1 className="pyre-logo">PYRE</h1>
-              <p className="pyre-subtitle">Plan Your Retirement Early</p>
-            </div>
+            <button
+              className="cta-button primary"
+              onClick={handleStartWithExamples}
+            >
+              Start your plan
+            </button>
 
             <div className="hero-links">
               <a
@@ -48,17 +50,16 @@ function Splash() {
             </div>
           </div>
 
-          <p className="hero-features">
-            Free, Ad Free, Open Source, No Login, No Tracking
-          </p>
-
-          <div className="cta-buttons">
-            <button
-              className="cta-button primary"
-              onClick={handleStartWithExamples}
-            >
-              Start your plan
-            </button>
+          <div className="hero-title-section">
+            <h1 className="hero-title">
+              <span className="hero-title-pyre">P</span>lan{" "}
+              <span className="hero-title-pyre">Y</span>our{" "}
+              <span className="hero-title-pyre">R</span>etirement{" "}
+              <span className="hero-title-pyre">E</span>asily
+            </h1>
+            <p className="hero-features">
+              Free, Ad Free, Open Source, No Login, No Tracking
+            </p>
           </div>
 
           <div className="app-preview">

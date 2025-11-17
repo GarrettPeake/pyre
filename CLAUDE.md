@@ -116,7 +116,7 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
 1. **Splash Page** (`src/Splash.tsx`)
 
    - Landing page with modern, finance-focused design
-   - Features the PYRE logo (orange with drop shadow) and tagline "Plan Your Retirement Early"
+   - Features the PYRE logo (orange with drop shadow) and tagline "Plan Your Retirement Easily"
    - Shows app preview placeholder (currently vite.svg, will be replaced with app screenshot)
    - Displays feature highlights: "Free, Ad Free, Open Source, No Login, No Tracking"
    - Two CTA buttons: "Start with examples" and "Start from scratch"
@@ -164,6 +164,18 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
    - Graph definitions with vertical indicators are memoized using `useMemo` to prevent unnecessary object recreation (`src/pages/AppPage.tsx:303-324`)
    - Charts only re-render when simulation snapshots change, not on every state update
    - Vertical indicators (current age, retirement age) are computed once and reused across all graphs
+
+   **Responsive Layout:**
+
+   - Default layout (< 1750px width): Single-column vertical layout with simulation setup, charts, and blocks stacked
+   - Wide screen layout (≥ 1750px width): Two-column flexbox layout with:
+     - Header fixed at 90px height
+     - Main content area constrained to `calc(100vh - 90px)` with no page scroll
+     - Left column (`.left-column`): Flexbox container with simulation setup card and charts, scrollable as a unit
+     - Right column (`.blocks-section`): Fixed-height container with scrollable blocks list (`.blocks-list`)
+     - Uses flexbox with `flex: 1` for equal-width columns
+     - Header content expands to 1650px max-width to match the wider content area
+     - Both columns have independent scrolling when content overflows
 
 ### Components
 
