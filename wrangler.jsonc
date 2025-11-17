@@ -11,16 +11,10 @@
   },
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
-  "routes": [
-    {
-      "pattern": "pyre.gpeake.com",
-      "custom_domain": true
-    }
-  ],
   "kv_namespaces": [
     {
       "binding": "FINANCIAL_PLANS",
-      "id": "174996f3445349769629543804dfb7fc"
+      "id": "<your KV key>"
     }
   ]
 }
