@@ -69,22 +69,15 @@ export function runGlobalSimulation(
   ) {
     // For each block in order:
     for (const block of input.blocks) {
-      const blockStartDate = new Date(block.state.startDate);
-      const blockEndDate = new Date(block.state.endDate);
-
-      // Skip if current date is before block start or after block end
-      if (currentDate < blockStartDate || currentDate > blockEndDate) {
+      // Check if block should execute on this date (based on frequency)
+      if (!shouldBlockExecute(currentDate, block.state)) {
         continue;
       }
 
       // Execute block init code on the first day of the block (block start date)
       if (!blockContexts.get(block.id)) {
         // Create the initial inputs
-        const totalPeriods = calculateTotalPeriods(
-          blockStartDate,
-          blockEndDate,
-          block.state.frequency
-        );
+        const totalPeriods = calculateTotalPeriods(block.state);
         // Initialize the context
         const initContext: Record<string, number> = {
           ...globalContext,
@@ -123,18 +116,6 @@ export function runGlobalSimulation(
         blockContexts.set(block.id, initContext);
       }
 
-      // Check if block should execute on this date (based on frequency)
-      if (!shouldBlockExecute(currentDate, block.state)) {
-        continue;
-      }
-
-      // Calculate periods_from_start for this execution
-      const periodsFromStart = calculatePeriodsFromStart(
-        blockStartDate,
-        currentDate,
-        block.state.frequency
-      );
-
       // Get persisted block-local context
       const blockContext = blockContexts.get(block.id)!;
 
@@ -142,7 +123,7 @@ export function runGlobalSimulation(
       const execContext: Record<string, number> = {
         ...blockContext,
         ...globalContext,
-        periods_from_start: periodsFromStart,
+        periods_from_start: blockContext.periodsFromStart + 1,
         total_periods: blockContext.total_periods || 0,
       };
 
@@ -191,8 +172,8 @@ export function runGlobalSimulation(
  * Checks if a block should execute on a given date based on its frequency and date range.
  */
 function shouldBlockExecute(date: Date, blockState: BlockState): boolean {
-  const startDate = new Date(blockState.startDate);
-  const endDate = new Date(blockState.endDate);
+  const startDate = parseYMDToUTC(blockState.startDate);
+  const endDate = parseYMDToUTC(blockState.endDate);
 
   // Date must be in range
   if (date < startDate || date > endDate) {
@@ -204,55 +185,39 @@ function shouldBlockExecute(date: Date, blockState: BlockState): boolean {
     return true; // Execute every day
   } else if (blockState.frequency === "monthly") {
     // Execute on same day of month as start date
-    return date.getDate() === startDate.getDate();
+    return date.getUTCDate() === startDate.getUTCDate();
   } else {
     // yearly
     // Execute on same day and month as start date
     return (
-      date.getDate() === startDate.getDate() &&
-      date.getMonth() === startDate.getMonth()
+      date.getUTCDate() === startDate.getUTCDate() &&
+      date.getUTCMonth() === startDate.getUTCMonth()
     );
-  }
-}
-
-/**
- * Calculates how many periods have elapsed since block start date.
- */
-function calculatePeriodsFromStart(
-  startDate: Date,
-  currentDate: Date,
-  frequency: "daily" | "monthly" | "yearly"
-): number {
-  if (frequency === "daily") {
-    const diffTime = currentDate.getTime() - startDate.getTime();
-    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  } else if (frequency === "monthly") {
-    const diffYears = currentDate.getFullYear() - startDate.getFullYear();
-    const diffMonths = currentDate.getMonth() - startDate.getMonth();
-    return diffYears * 12 + diffMonths;
-  } else {
-    // yearly
-    return currentDate.getFullYear() - startDate.getFullYear();
   }
 }
 
 /**
  * Calculates the total number of periods between two dates based on frequency.
  */
-function calculateTotalPeriods(
-  start: Date,
-  end: Date,
-  frequency: "daily" | "monthly" | "yearly"
-): number {
-  if (frequency === "daily") {
-    const diffTime = end.getTime() - start.getTime();
+function calculateTotalPeriods(state: BlockState): number {
+  const blockStartDate = parseYMDToUTC(state.startDate);
+  const blockEndDate = parseYMDToUTC(state.endDate);
+  if (state.frequency === "daily") {
+    const diffTime = blockEndDate.getTime() - blockStartDate.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  } else if (frequency === "monthly") {
-    const diffYears = end.getFullYear() - start.getFullYear();
-    const diffMonths = end.getMonth() - start.getMonth();
+  } else if (state.frequency === "monthly") {
+    const diffYears =
+      blockEndDate.getUTCFullYear() - blockStartDate.getUTCFullYear();
+    const diffMonths =
+      blockEndDate.getUTCMonth() - blockStartDate.getUTCMonth();
     return diffYears * 12 + diffMonths + 1;
   } else {
     // yearly
-    return end.getFullYear() - start.getFullYear() + 1;
+    return blockEndDate.getUTCFullYear() - blockStartDate.getUTCFullYear() + 1;
   }
+}
+
+function parseYMDToUTC(ymd: string) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)); // m-1 because JS months are 0-based
 }

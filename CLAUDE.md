@@ -23,9 +23,9 @@ Net Worth:
     frequency: daily
     line: k401 + cash + investments + bonds + property - debts
     stacked: k401,cash,investments,bonds,property,-debts
-Mortgage (Interest vs Principle contributions):
+Mortgage (Interest vs principal contributions):
     frequency: daily
-    line: interest_portion, principle_portion
+    line: interest_portion, principal_portion
 ```
 
 The variables in the top level initialization are 'global' and are then accessible to every 'block'
@@ -39,30 +39,30 @@ A block defines a financial function that affects our global variables. For inst
 Monthly
 
 -- Inputs
-down_payment, original_principle, apr
+down_payment, original_principal, apr
 
 -- Init
-asset_price = down_payment + original_principle
-current_principle = original_principle
+asset_price = down_payment + original_principal
+current_principal = original_principal
 payments = total_periods
 monthly_interest = apr / 12
-payment = original_principle * (monthly_interest * (1 + monthly_interest)^(payments))/((1+monthly_interest)^(payments)-1)
-debts = debts + original_principle
+payment = original_principal * (monthly_interest * (1 + monthly_interest)^(payments))/((1+monthly_interest)^(payments)-1)
+debts = debts + original_principal
 property = property + asset_price
 
 -- Execution
-interest_portion = current_principle * monthly_interest
-principle_portion = payment - interest_portion
-current_principle = current_principle - principle_portion
+interest_portion = current_principal * monthly_interest
+principal_portion = payment - interest_portion
+current_principal = current_principal - principal_portion
 # Comments use a hashtag
-debts = debts - principle_portion
+debts = debts - principal_portion
 
 -- Export (variables to be added to the global scope to be used by the following blocks)
-interest_portion, principle_portion
+interest_portion, principal_portion
 
 -- Graph (used to let the user debug their formulas, uses the same frequency as the block itself)
 Portions:
-    line: interest_portion, principle_portion
+    line: interest_portion, principal_portion
 ```
 
 Note that everything is actually in JSON format, the formatting above is just for brevity/clarity
@@ -124,8 +124,9 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
 
 2. **App Page** (`src/AppPage.tsx`)
 
-   - Main application interface with sticky header containing PYRE logo with info icon, plan ID with save status indicator, and GitHub/Ko-Fi links
+   - Main application interface with sticky header containing PYRE logo with info icon, plan ID with save status indicator, conditionally-shown Simulate button, and GitHub/Ko-Fi links
    - Info icon (next to logo) opens tutorial modal with comprehensive usage instructions
+   - Sticky header shows a duplicate Simulate button when the original button in the Simulation Setup section scrolls out of view, using Intersection Observer API
    - Receives plan ID from URL params
    - Simulation Setup card with editable simulation name (replaces the static "Simulation Setup" title)
    - Overview card containing:
@@ -149,8 +150,9 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
    - Maintains array of BlockData objects containing block configurations
    - Uses SimulationEngine to run centralized simulation, triggered via:
      - Automatically once when page finishes loading
-     - Manually via "Simulate" button in Simulation Setup panel header
+     - Manually via "Simulate" button in Simulation Setup panel header OR header button when scrolled
    - "Simulate" button shows spinner and "Simulating..." text while running, and is disabled during execution
+   - When the original Simulate button scrolls out of view, a duplicate button appears in the sticky header (tracked via Intersection Observer and useRef)
    - Simulation produces SimulationSnapshot[] containing global context at each date
    - Global variables (defined in globalInit) persist throughout simulation and are modified by blocks through exports
    - Block-local variables persist only within that block's executions
@@ -328,21 +330,24 @@ The centralized execution engine that orchestrates the complete financial simula
 **Execution Algorithm:**
 
 1. **Global Init Phase**: Execute globalInit code once to populate global context with starting variables (e.g., k401, cash, investments)
-2. **Block Init Phase**: For each block in order:
-   - Create block-local context with block inputs
-   - Combine with global context and default inputs (total_periods, periods_from_start)
-   - Execute block's init code
-   - Export specified variables to global context
-   - Persist block-local variables across that block's executions
-3. **Time Iteration Phase**: Iterate every day from birth to endAge (typically 100):
-   - For each eligible block (based on date range and frequency):
-     - Restore block-local context
-     - Combine with global context and updated default inputs
-     - Execute block's execution code
-     - Export specified variables to global context
-     - Update block-local context for next execution
+2. **Time Iteration Phase**: Iterate every day from birth to endAge (typically 100):
+   - For each block within its date range:
+     - **On block start date (first time block is encountered)**: Execute block's init code once
+       - Create init context combining global context, block inputs, and default inputs (total_periods, periods_from_start=0)
+       - Execute block's init code
+       - Export specified variables (and all existing global variables) to global context
+       - Store block context for future executions
+     - **On frequency-matching dates**: Execute block's execution code
+       - Check if block should execute based on frequency (daily/monthly/yearly alignment)
+       - Restore block-local context and combine with current global context
+       - Update periods_from_start based on elapsed time since block start
+       - Execute block's execution code
+       - Export specified variables (and all existing global variables) to global context
+       - Update stored block context
    - Store snapshot of complete global context for that date
-4. **Return**: Array of SimulationSnapshot objects, one per day
+3. **Return**: Array of SimulationSnapshot objects, one per day
+
+**Important**: Block init code executes on the block's start date, not at simulation start. This ensures financial events (e.g., taking on debt for a home loan) occur when scheduled, not at birth.
 
 **Context Management:**
 
@@ -403,17 +408,17 @@ debts = 0
    - Line: `k401 + cash + investments + bonds + property - debts`
    - Stacked: `k401, cash, investments, bonds, property, -debts`
    - Frequency: Monthly
-2. **Mortgage (Interest vs Principle)**: Tracks mortgage payment breakdown using exported block variables
-   - Line: `interest_portion, principle_portion`
+2. **Mortgage (Interest vs principal)**: Tracks mortgage payment breakdown using exported block variables
+   - Line: `interest_portion, principal_portion`
    - Frequency: Monthly
 
 **Default Block** demonstrates a 30-year home loan (2025-2055):
 
-- **Inputs**: `down_payment` (25000), `original_principle` (175000), `apr` (0.06)
+- **Inputs**: `down_payment` (25000), `original_principal` (175000), `apr` (0.06)
 - **Init**: Calculates loan parameters, adds to property and debts
-- **Execution**: Computes monthly interest/principle portions, reduces debt
-- **Exports**: `interest_portion`, `principle_portion` for use in graphs and other blocks
-- **Block Graph**: Visualizes the interest vs principle portions over time
+- **Execution**: Computes monthly interest/principal portions, reduces debt
+- **Exports**: `interest_portion`, `principal_portion` for use in graphs and other blocks
+- **Block Graph**: Visualizes the interest vs principal portions over time
 
 This example showcases:
 

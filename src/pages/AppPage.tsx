@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Block, { type BlockState } from "../components/Block";
 import FloatingLabelInput from "../components/FloatingLabelInput";
 import FloatingLabelTextarea from "../components/FloatingLabelTextarea";
@@ -96,11 +96,11 @@ const DEFAULT_GRAPHS: GraphDefinition[] = [
   },
   {
     id: uuidv4(),
-    title: "Mortgage (Interest vs Principle)",
+    title: "Mortgage (Interest vs principal)",
     frequency: "monthly",
     verticals: [],
     expressions: {
-      line: ["interest_portion", "principle_portion"],
+      line: ["interest_portion", "principal_portion"],
     },
   },
 ];
@@ -118,22 +118,22 @@ const DEFAULT_BLOCKS: Array<{
       endDate: "2055-11-01",
       inputs: {
         down: "25000",
-        principle: "175000",
+        principal: "175000",
         apr: "0.06",
       },
-      init: `asset_price = down + principle
+      init: `asset_price = down + principal
 monthly_interest = apr / 12
-payment = principle * monthly_interest * (1 + monthly_interest) ** total_periods / ((1 + monthly_interest) ** total_periods - 1)
+payment = principal * monthly_interest * (1 + monthly_interest) ** total_periods / ((1 + monthly_interest) ** total_periods - 1)
 property = property + asset_price
-debts = debts + principle
+debts = debts + principal
 cash = cash - down`,
       frequency: "monthly",
-      execution: `interest_portion = principle * monthly_interest
-principle_portion = payment - interest_portion
-principle = principle - principle_portion
-debts = debts - principle_portion
+      execution: `interest_portion = principal * monthly_interest
+principal_portion = payment - interest_portion
+principal = principal - principal_portion
+debts = debts - principal_portion
 cash = cash - payment`,
-      exports: "interest_portion,principle_portion,payment",
+      exports: "interest_portion,principal_portion,payment",
       graphs: [
         {
           id: uuidv4(),
@@ -141,7 +141,7 @@ cash = cash - payment`,
           frequency: "monthly",
           verticals: [],
           expressions: {
-            line: ["interest_portion", "principle_portion"],
+            line: ["interest_portion", "principal_portion"],
           },
         },
       ],
@@ -178,6 +178,8 @@ function AppPage() {
     SimulationSnapshot[]
   >([]);
   const [isTutorialOpen, setIsTutorialOpen] = useState<boolean>(false);
+  const [showHeaderSimulate, setShowHeaderSimulate] = useState<boolean>(false);
+  const simulateButtonRef = useRef<HTMLButtonElement>(null);
 
   // Load plan data from backend on mount
   useEffect(() => {
@@ -303,6 +305,27 @@ function AppPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 
+  // Track visibility of original Simulate button
+  useEffect(() => {
+    const button = simulateButtonRef.current;
+    if (!button) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // Show header button when original button starts going behind header
+        // Use ratio < 1 to trigger as soon as it starts being covered
+        setShowHeaderSimulate(entry.intersectionRatio < 1);
+      },
+      {
+        threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+        rootMargin: '0px 0px 0px 0px'
+      }
+    );
+
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, []);
+
   // Calculate dates for vertical indicators - memoize to prevent unnecessary re-renders
   const verticalIndicators = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -379,6 +402,22 @@ function AppPage() {
             </div>
             <p className="header-link">Bookmark your secret link!</p>
           </div>
+          {showHeaderSimulate && (
+            <button
+              className="header-simulate-button"
+              onClick={runSimulation}
+              disabled={isSimulating}
+            >
+              {isSimulating ? (
+                <>
+                  <span className="spinner"></span>
+                  Simulating...
+                </>
+              ) : (
+                "Simulate"
+              )}
+            </button>
+          )}
           <div className="hero-links">
             <a
               href="https://github.com/GarrettPeake/PYRE"
@@ -432,6 +471,7 @@ function AppPage() {
               )}
               <div className="setup-buttons">
                 <button
+                  ref={simulateButtonRef}
                   className="setup-simulate-button"
                   onClick={runSimulation}
                   disabled={isSimulating}
@@ -805,24 +845,24 @@ function AppPage() {
           <ul>
             <li>
               <strong>Inputs:</strong> <code>down_payment</code>,{" "}
-              <code>original_principle</code>, <code>apr</code>
+              <code>original_principal</code>, <code>apr</code>
             </li>
             <li>
               <strong>Init:</strong> Calculate payment amount, add the home's
-              value to <code>property</code>, the principle borrowed to{" "}
+              value to <code>property</code>, the principal borrowed to{" "}
               <code>debts</code>, and subtract the down payment from your cash
             </li>
             <li>
               <strong>Execution:</strong> Each month, compute the portion of the
               payment going towards <code>interest</code> and{" "}
-              <code>principle</code>, subtract the <code>principle</code> amount
+              <code>principal</code>, subtract the <code>principal</code> amount
               from your <code>debts</code> and both amounts from your{" "}
               <code>cash</code>. We finally need to keep track of the amount of
-              principle we currently have leftover.
+              principal we currently have leftover.
             </li>
             <li>
               <strong>Exports:</strong> You might export the{" "}
-              <code>interest_portion</code> and <code>principle_portion</code>{" "}
+              <code>interest_portion</code> and <code>principal_portion</code>{" "}
               for graphing
             </li>
           </ul>

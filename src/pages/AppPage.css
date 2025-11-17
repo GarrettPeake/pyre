@@ -69,6 +69,36 @@
   transition: color 0.2s ease;
 }
 
+.header-simulate-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-accent-orange);
+  color: var(--color-white);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: 500;
+}
+
+.header-simulate-button:hover {
+  background-color: #e66300;
+  box-shadow: var(--shadow-sm);
+}
+
+.header-simulate-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.header-simulate-button:disabled:hover {
+  background-color: var(--color-accent-orange);
+  box-shadow: none;
+}
+
 .secret-link-hint-stack {
   display: flex;
   flex-direction: column;

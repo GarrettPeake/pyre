@@ -120,7 +120,7 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
     if (!chartRef.current || snapshots.length === 0) return;
 
     // Build chart data from snapshots
-    const { data, allExpressions } = buildChartData(graphDefinition, snapshots);
+    const { data } = buildChartData(graphDefinition, snapshots);
 
     if (data.length === 0) return;
 
