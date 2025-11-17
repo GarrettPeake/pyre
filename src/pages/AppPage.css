@@ -506,6 +506,7 @@
     gap: var(--spacing-md);
     min-height: 0;
     margin-top: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
     overflow-y: auto;
   }
 
