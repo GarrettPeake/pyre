@@ -318,7 +318,7 @@ function AppPage() {
       },
       {
         threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
-        rootMargin: '0px 0px 0px 0px'
+        rootMargin: "0px 0px 0px 0px",
       }
     );
 
@@ -453,246 +453,246 @@ function AppPage() {
           <div className="left-column">
             {/* Simulation Setup Section */}
             <section className="simulation-setup-card">
-            <div
-              className={
-                isEditingSetup
-                  ? "setup-header-expanded setup-header"
-                  : "setup-header"
-              }
-            >
-              {isEditingSetup ? (
-                <FloatingLabelInput
-                  label="Simulation Name"
-                  type="text"
-                  value={simulationName}
-                  onChange={(e) => setSimulationName(e.target.value)}
-                  className="setup-title-input"
-                />
-              ) : (
-                <h2 className="setup-title">{simulationName}</h2>
-              )}
-              <div className="setup-buttons">
-                <button
-                  ref={simulateButtonRef}
-                  className="setup-simulate-button"
-                  onClick={runSimulation}
-                  disabled={isSimulating}
-                >
-                  {isSimulating ? (
-                    <>
-                      <span className="spinner"></span>
-                      Simulating...
-                    </>
-                  ) : (
-                    "Simulate"
-                  )}
-                </button>
-                <button
-                  className={`setup-edit-button ${
-                    isEditingSetup ? "editing" : ""
-                  }`}
-                  onClick={() => setIsEditingSetup(!isEditingSetup)}
-                >
-                  {isEditingSetup ? "Done" : "Edit"}
-                </button>
+              <div
+                className={
+                  isEditingSetup
+                    ? "setup-header-expanded setup-header"
+                    : "setup-header"
+                }
+              >
+                {isEditingSetup ? (
+                  <FloatingLabelInput
+                    label="Simulation Name"
+                    type="text"
+                    value={simulationName}
+                    onChange={(e) => setSimulationName(e.target.value)}
+                    className="setup-title-input"
+                  />
+                ) : (
+                  <h2 className="setup-title">{simulationName}</h2>
+                )}
+                <div className="setup-buttons">
+                  <button
+                    ref={simulateButtonRef}
+                    className="setup-simulate-button"
+                    onClick={runSimulation}
+                    disabled={isSimulating}
+                  >
+                    {isSimulating ? (
+                      <>
+                        <span className="spinner"></span>
+                        Simulating...
+                      </>
+                    ) : (
+                      "Simulate"
+                    )}
+                  </button>
+                  <button
+                    className={`setup-edit-button ${
+                      isEditingSetup ? "editing" : ""
+                    }`}
+                    onClick={() => setIsEditingSetup(!isEditingSetup)}
+                  >
+                    {isEditingSetup ? "Done" : "Edit"}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {isEditingSetup && (
-              <div className="setup-content">
-                <div className="age-inputs-row">
-                  <FloatingLabelInput
-                    label="Current Age"
-                    type="number"
-                    value={currentAge}
-                    onChange={(e) => setCurrentAge(Number(e.target.value))}
-                  />
-                  <FloatingLabelInput
-                    label="Target Retirement Age"
-                    type="number"
-                    value={retirementAge}
-                    onChange={(e) => setRetirementAge(Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="global-init-section">
-                  <FloatingLabelTextarea
-                    label="Simulation Initialization"
-                    value={globalInit}
-                    onChange={(e) => setGlobalInit(e.target.value)}
-                    rows={6}
-                    placeholder=""
-                  />
-                </div>
-
-                <div className="graphs-config-section">
-                  <div className="graphs-config-header">
-                    <h3 className="graphs-config-title">Main Graphs</h3>
-                    <button
-                      className="add-graph-button"
-                      onClick={() =>
-                        setGraphs((prev) => [
-                          ...prev,
-                          {
-                            id: uuidv4(),
-                            title: "New Graph",
-                            frequency: "monthly",
-                            verticals: [],
-                            expressions: { line: [], stacked: [], bar: [] },
-                          },
-                        ])
-                      }
-                    >
-                      +
-                    </button>
+              {isEditingSetup && (
+                <div className="setup-content">
+                  <div className="age-inputs-row">
+                    <FloatingLabelInput
+                      label="Current Age"
+                      type="number"
+                      value={currentAge}
+                      onChange={(e) => setCurrentAge(Number(e.target.value))}
+                    />
+                    <FloatingLabelInput
+                      label="Target Retirement Age"
+                      type="number"
+                      value={retirementAge}
+                      onChange={(e) => setRetirementAge(Number(e.target.value))}
+                    />
                   </div>
 
-                  {graphs.map((graph, index) => (
-                    <div key={graph.id} className="graph-config-card">
-                      <div className="graph-config-header">
-                        <FloatingLabelInput
-                          label="Title"
-                          value={graph.title}
-                          onChange={(e) =>
-                            setGraphs((prev) =>
-                              prev.map((g, i) =>
-                                i === index
-                                  ? { ...g, title: e.target.value }
-                                  : g
-                              )
-                            )
-                          }
-                        />
-                        <FloatingLabelSelect
-                          label="Frequency"
-                          value={graph.frequency}
-                          onChange={(e) =>
-                            setGraphs((prev) =>
-                              prev.map((g, i) =>
-                                i === index
-                                  ? {
-                                      ...g,
-                                      frequency: e.target.value as
-                                        | "daily"
-                                        | "monthly"
-                                        | "yearly",
-                                    }
-                                  : g
-                              )
-                            )
-                          }
-                        >
-                          <option value="daily">Daily</option>
-                          <option value="monthly">Monthly</option>
-                          <option value="yearly">Yearly</option>
-                        </FloatingLabelSelect>
-                        <button
-                          className="delete-graph-button"
-                          onClick={() =>
-                            setGraphs((prev) =>
-                              prev.filter((_, i) => i !== index)
-                            )
-                          }
-                        >
-                          Delete
-                        </button>
-                      </div>
+                  <div className="global-init-section">
+                    <FloatingLabelTextarea
+                      label="Simulation Initialization"
+                      value={globalInit}
+                      onChange={(e) => setGlobalInit(e.target.value)}
+                      rows={6}
+                      placeholder=""
+                    />
+                  </div>
 
-                      <div className="graph-config-expressions">
-                        <FloatingLabelInput
-                          label="Line Expressions (comma-separated)"
-                          value={graph.expressions.line?.join(", ") || ""}
-                          onChange={(e) =>
-                            setGraphs((prev) =>
-                              prev.map((g, i) =>
-                                i === index
-                                  ? {
-                                      ...g,
-                                      expressions: {
-                                        ...g.expressions,
-                                        line: e.target.value
-                                          .split(",")
-                                          .map((s) => s.trim())
-                                          .filter(Boolean),
-                                      },
-                                    }
-                                  : g
-                              )
-                            )
-                          }
-                          placeholder=""
-                        />
-                        <FloatingLabelInput
-                          label="Stacked Expressions (comma-separated)"
-                          value={graph.expressions.stacked?.join(", ") || ""}
-                          onChange={(e) =>
-                            setGraphs((prev) =>
-                              prev.map((g, i) =>
-                                i === index
-                                  ? {
-                                      ...g,
-                                      expressions: {
-                                        ...g.expressions,
-                                        stacked: e.target.value
-                                          .split(",")
-                                          .map((s) => s.trim())
-                                          .filter(Boolean),
-                                      },
-                                    }
-                                  : g
-                              )
-                            )
-                          }
-                          placeholder=""
-                        />
-                        <FloatingLabelInput
-                          label="Bar Expressions (comma-separated)"
-                          value={graph.expressions.bar?.join(", ") || ""}
-                          onChange={(e) =>
-                            setGraphs((prev) =>
-                              prev.map((g, i) =>
-                                i === index
-                                  ? {
-                                      ...g,
-                                      expressions: {
-                                        ...g.expressions,
-                                        bar: e.target.value
-                                          .split(",")
-                                          .map((s) => s.trim())
-                                          .filter(Boolean),
-                                      },
-                                    }
-                                  : g
-                              )
-                            )
-                          }
-                          placeholder=""
-                        />
-                      </div>
+                  <div className="graphs-config-section">
+                    <div className="graphs-config-header">
+                      <h3 className="graphs-config-title">Main Graphs</h3>
+                      <button
+                        className="add-graph-button"
+                        onClick={() =>
+                          setGraphs((prev) => [
+                            ...prev,
+                            {
+                              id: uuidv4(),
+                              title: "New Graph",
+                              frequency: "monthly",
+                              verticals: [],
+                              expressions: { line: [], stacked: [], bar: [] },
+                            },
+                          ])
+                        }
+                      >
+                        +
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </section>
 
-          {/* Main Graphs Section */}
-          <section className="overview-card">
-            {graphs.length === 0 ? (
-              <div className="empty-graphs-message">
-                <p>Add graphs in Simulation Setup to visualize your plan</p>
-              </div>
-            ) : (
-              graphsWithVerticals.map((graphDef) => (
-                <div key={graphDef.id} className="graph-content">
-                  <Chart
-                    graphDefinition={graphDef}
-                    snapshots={simulationSnapshots}
-                  />
+                    {graphs.map((graph, index) => (
+                      <div key={graph.id} className="graph-config-card">
+                        <div className="graph-config-header">
+                          <FloatingLabelInput
+                            label="Title"
+                            value={graph.title}
+                            onChange={(e) =>
+                              setGraphs((prev) =>
+                                prev.map((g, i) =>
+                                  i === index
+                                    ? { ...g, title: e.target.value }
+                                    : g
+                                )
+                              )
+                            }
+                          />
+                          <FloatingLabelSelect
+                            label="Frequency"
+                            value={graph.frequency}
+                            onChange={(e) =>
+                              setGraphs((prev) =>
+                                prev.map((g, i) =>
+                                  i === index
+                                    ? {
+                                        ...g,
+                                        frequency: e.target.value as
+                                          | "daily"
+                                          | "monthly"
+                                          | "yearly",
+                                      }
+                                    : g
+                                )
+                              )
+                            }
+                          >
+                            <option value="daily">Daily</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                          </FloatingLabelSelect>
+                          <button
+                            className="delete-graph-button"
+                            onClick={() =>
+                              setGraphs((prev) =>
+                                prev.filter((_, i) => i !== index)
+                              )
+                            }
+                          >
+                            Delete
+                          </button>
+                        </div>
+
+                        <div className="graph-config-expressions">
+                          <FloatingLabelInput
+                            label="Line Expressions (comma-separated)"
+                            value={graph.expressions.line?.join(", ") || ""}
+                            onChange={(e) =>
+                              setGraphs((prev) =>
+                                prev.map((g, i) =>
+                                  i === index
+                                    ? {
+                                        ...g,
+                                        expressions: {
+                                          ...g.expressions,
+                                          line: e.target.value
+                                            .split(",")
+                                            .map((s) => s.trim())
+                                            .filter(Boolean),
+                                        },
+                                      }
+                                    : g
+                                )
+                              )
+                            }
+                            placeholder=""
+                          />
+                          <FloatingLabelInput
+                            label="Stacked Expressions (comma-separated)"
+                            value={graph.expressions.stacked?.join(", ") || ""}
+                            onChange={(e) =>
+                              setGraphs((prev) =>
+                                prev.map((g, i) =>
+                                  i === index
+                                    ? {
+                                        ...g,
+                                        expressions: {
+                                          ...g.expressions,
+                                          stacked: e.target.value
+                                            .split(",")
+                                            .map((s) => s.trim())
+                                            .filter(Boolean),
+                                        },
+                                      }
+                                    : g
+                                )
+                              )
+                            }
+                            placeholder=""
+                          />
+                          <FloatingLabelInput
+                            label="Bar Expressions (comma-separated)"
+                            value={graph.expressions.bar?.join(", ") || ""}
+                            onChange={(e) =>
+                              setGraphs((prev) =>
+                                prev.map((g, i) =>
+                                  i === index
+                                    ? {
+                                        ...g,
+                                        expressions: {
+                                          ...g.expressions,
+                                          bar: e.target.value
+                                            .split(",")
+                                            .map((s) => s.trim())
+                                            .filter(Boolean),
+                                        },
+                                      }
+                                    : g
+                                )
+                              )
+                            }
+                            placeholder=""
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))
-            )}
-          </section>
+              )}
+            </section>
+
+            {/* Main Graphs Section */}
+            <section className="overview-card">
+              {graphs.length === 0 ? (
+                <div className="empty-graphs-message">
+                  <p>Add graphs in Simulation Setup to visualize your plan</p>
+                </div>
+              ) : (
+                graphsWithVerticals.map((graphDef) => (
+                  <div key={graphDef.id} className="graph-content">
+                    <Chart
+                      graphDefinition={graphDef}
+                      snapshots={simulationSnapshots}
+                    />
+                  </div>
+                ))
+              )}
+            </section>
           </div>
 
           {/* Right Column: Financial Functions */}
@@ -737,7 +737,7 @@ function AppPage() {
         onClose={() => setIsTutorialOpen(false)}
         title={
           <p>
-            How to Use <span className="logo-text">PYRE</span>
+            <span className="logo-text">PYRE</span>: info
           </p>
         }
       >

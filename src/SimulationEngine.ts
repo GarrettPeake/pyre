@@ -123,7 +123,7 @@ export function runGlobalSimulation(
       const execContext: Record<string, number> = {
         ...blockContext,
         ...globalContext,
-        periods_from_start: blockContext.periodsFromStart + 1,
+        periods_from_start: blockContext.periods_from_start + 1,
         total_periods: blockContext.total_periods || 0,
       };
 

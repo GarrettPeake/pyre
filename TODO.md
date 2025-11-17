@@ -1,6 +1,11 @@
-* Open editors as JSON rather than forms
-* Enable download/uploads of sim
-* Enable duplicating sim for shareable links
-* Enable password protecting sim to enable sharing without editing
-* Add a function library
-* Add hover and legends for charts
+- Open editors as JSON rather than forms
+- Enable download/uploads of sim from JSON
+- Enable duplicating sim for shareable links
+- Enable password protecting sim to enable sharing without editing
+- Add a function library
+- Add hover and legends for charts
+- Detect and block javascript keywords
+- Add function specific graphs
+- Enable typing commas in graph inputs
+- Tighten up the function input display
+- Prevent graphs from re-rendering on every input change in the graph menu
