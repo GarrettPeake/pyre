@@ -1,6 +1,6 @@
-# PYRE - Plan Your Retirement Easily
+# <img src="public/pyre.svg" alt="PYRE Logo" height="40" style="vertical-align: middle;"> PYRE - Plan Your Retirement Easily
 
-A free, open-source financial planning calculator that gives you complete control over your retirement modeling.
+A free, open-source financial planning calculator that gives you complete control over your retirement modeling. It was built for financial planning but is really just a timeseries calculator
 
 ![PYRE Demo](public/demo.png)
 
