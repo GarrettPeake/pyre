@@ -162,6 +162,7 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
    **Performance Optimizations:**
 
    - **Debounced Graph Rendering**: Graph definitions are debounced using `useDebouncedValue` hook (1-second delay) to prevent expensive Chart re-renders on every keystroke when editing graph expressions. Form inputs update immediately for responsiveness, but Charts only re-render 1 second after the last change.
+   - **Trailing Comma Support**: Graph expression inputs preserve empty strings from trailing commas during typing (e.g., typing "k401," stores `["k401", ""]`). This allows users to type comma-separated expressions naturally. Empty strings are filtered out by the Chart component before rendering, preventing phantom data series.
    - Graph definitions with vertical indicators are memoized using `useMemo` to prevent unnecessary object recreation
    - Charts only re-render when simulation snapshots change, not on every state update
    - Vertical indicators (current age, retirement age) are computed once and reused across all graphs
@@ -270,6 +271,7 @@ A reusable, D3-powered chart component for rendering financial data visualizatio
 - **Vertical Indicators**: Renders vertical lines with labels (e.g., current age, retirement age) from GraphDefinition
 - **Automatic Scaling**: Axes scale based on all data values with 10% padding
 - **Error Handling**: Gracefully handles expression evaluation errors (defaults to 0)
+- **Empty Expression Filtering**: Filters out empty strings from expression arrays before processing. This allows graph expression inputs to preserve trailing commas during typing (for better UX) without rendering phantom data series.
 - **Performance**: Memoized with `React.memo` to only re-render when `graphDefinition` or `snapshots` props change
 - **Always-Visible Legend**: Displays a legend below the chart showing color swatches and expression names for all data series (bar, stacked, and line expressions), enabling users to understand what each color represents
 - **Hover Tooltip**: When users hover over the chart, a tooltip appears showing:

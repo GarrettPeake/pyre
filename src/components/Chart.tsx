@@ -103,12 +103,12 @@ function buildChartData(
   // Sample snapshots based on frequency
   const sampledSnapshots = sampleSnapshots(snapshots, graphDefinition.frequency);
 
-  // Collect all expressions from all types
+  // Collect all expressions from all types, filtering out empty strings
   const allExpressions: string[] = [
     ...(graphDefinition.expressions.line || []),
     ...(graphDefinition.expressions.stacked || []),
     ...(graphDefinition.expressions.bar || []),
-  ];
+  ].filter(Boolean);
 
   // Build data points
   const data: ChartDataPoint[] = sampledSnapshots.map(snapshot => {
@@ -133,8 +133,8 @@ function buildLegendItems(graphDefinition: GraphDefinition): LegendItem[] {
   const items: LegendItem[] = [];
   let colorIndex = 0;
 
-  // Bar expressions first (rendered as bottom layer)
-  (graphDefinition.expressions.bar || []).forEach((expr) => {
+  // Bar expressions first (rendered as bottom layer), filtering empty strings
+  (graphDefinition.expressions.bar || []).filter(Boolean).forEach((expr) => {
     items.push({
       expr,
       color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
@@ -143,8 +143,8 @@ function buildLegendItems(graphDefinition: GraphDefinition): LegendItem[] {
     colorIndex++;
   });
 
-  // Stacked expressions (middle layer)
-  (graphDefinition.expressions.stacked || []).forEach((expr) => {
+  // Stacked expressions (middle layer), filtering empty strings
+  (graphDefinition.expressions.stacked || []).filter(Boolean).forEach((expr) => {
     items.push({
       expr,
       color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
@@ -153,8 +153,8 @@ function buildLegendItems(graphDefinition: GraphDefinition): LegendItem[] {
     colorIndex++;
   });
 
-  // Line expressions (top layer)
-  (graphDefinition.expressions.line || []).forEach((expr) => {
+  // Line expressions (top layer), filtering empty strings
+  (graphDefinition.expressions.line || []).filter(Boolean).forEach((expr) => {
     items.push({
       expr,
       color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
@@ -285,9 +285,9 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
     let yMin = 0;
     let yMax = 0;
 
-    // For line and bar expressions, use individual values
-    const lineExprs = graphDefinition.expressions.line || [];
-    const barExprs = graphDefinition.expressions.bar || [];
+    // For line and bar expressions, use individual values (filter empty strings)
+    const lineExprs = (graphDefinition.expressions.line || []).filter(Boolean);
+    const barExprs = (graphDefinition.expressions.bar || []).filter(Boolean);
 
     data.forEach((d) => {
       [...lineExprs, ...barExprs].forEach((expr) => {
@@ -297,8 +297,8 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
       });
     });
 
-    // For stacked expressions, calculate cumulative positive and negative stacks
-    const stackedExprs = graphDefinition.expressions.stacked || [];
+    // For stacked expressions, calculate cumulative positive and negative stacks (filter empty strings)
+    const stackedExprs = (graphDefinition.expressions.stacked || []).filter(Boolean);
     if (stackedExprs.length > 0) {
       data.forEach((d) => {
         let positiveStack = 0;
@@ -327,8 +327,9 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
     // Render based on expression types
 
     // 1. Render bar series (bottom layer)
-    if (graphDefinition.expressions.bar && graphDefinition.expressions.bar.length > 0) {
-      const barExpressions = graphDefinition.expressions.bar;
+    const filteredBarExprs = (graphDefinition.expressions.bar || []).filter(Boolean);
+    if (filteredBarExprs.length > 0) {
+      const barExpressions = filteredBarExprs;
       const barWidth = (width + 90) / data.length;
       const barGroupWidth = barWidth * 0.8;
       const individualBarWidth = barGroupWidth / barExpressions.length;
@@ -357,8 +358,9 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
     }
 
     // 2. Render stacked series (middle layer)
-    if (graphDefinition.expressions.stacked && graphDefinition.expressions.stacked.length > 0) {
-      const stackedExpressions = graphDefinition.expressions.stacked;
+    const filteredStackedExprs = (graphDefinition.expressions.stacked || []).filter(Boolean);
+    if (filteredStackedExprs.length > 0) {
+      const stackedExpressions = filteredStackedExprs;
 
       // Prepare data for diverging stacked chart (separate positive and negative values)
       const stackData = data.map(d => {
@@ -432,7 +434,7 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
         const points = pointsByExpression.get(expr);
         if (!points || points.length === 0) return;
 
-        const color = COLOR_PALETTE[(graphDefinition.expressions.bar?.length || 0) + index % COLOR_PALETTE.length];
+        const color = COLOR_PALETTE[(filteredBarExprs.length + index) % COLOR_PALETTE.length];
 
         g.append("path")
           .datum(points)
@@ -443,10 +445,11 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
     }
 
     // 3. Render line series (top layer)
-    if (graphDefinition.expressions.line && graphDefinition.expressions.line.length > 0) {
-      const lineExpressions = graphDefinition.expressions.line;
-      const barCount = graphDefinition.expressions.bar?.length || 0;
-      const stackedCount = graphDefinition.expressions.stacked?.length || 0;
+    const filteredLineExprs = (graphDefinition.expressions.line || []).filter(Boolean);
+    if (filteredLineExprs.length > 0) {
+      const lineExpressions = filteredLineExprs;
+      const barCount = filteredBarExprs.length;
+      const stackedCount = filteredStackedExprs.length;
 
       lineExpressions.forEach((expr, index) => {
         const colorIndex = (barCount + stackedCount + index) % COLOR_PALETTE.length;

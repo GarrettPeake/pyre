@@ -618,8 +618,7 @@ function AppPage() {
                                           ...g.expressions,
                                           line: e.target.value
                                             .split(",")
-                                            .map((s) => s.trim())
-                                            .filter(Boolean),
+                                            .map((s) => s.trim()),
                                         },
                                       }
                                     : g
@@ -641,8 +640,7 @@ function AppPage() {
                                           ...g.expressions,
                                           stacked: e.target.value
                                             .split(",")
-                                            .map((s) => s.trim())
-                                            .filter(Boolean),
+                                            .map((s) => s.trim()),
                                         },
                                       }
                                     : g
@@ -664,8 +662,7 @@ function AppPage() {
                                           ...g.expressions,
                                           bar: e.target.value
                                             .split(",")
-                                            .map((s) => s.trim())
-                                            .filter(Boolean),
+                                            .map((s) => s.trim()),
                                         },
                                       }
                                     : g
