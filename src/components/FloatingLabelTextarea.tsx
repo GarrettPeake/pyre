@@ -8,9 +8,10 @@ interface FloatingLabelTextareaProps {
   className?: string
   rows?: number
   placeholder?: string
+  disabled?: boolean
 }
 
-function FloatingLabelTextarea({ label, value, onChange, className = '', rows = 4, placeholder }: FloatingLabelTextareaProps) {
+function FloatingLabelTextarea({ label, value, onChange, className = '', rows = 4, placeholder, disabled = false }: FloatingLabelTextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -28,6 +29,7 @@ function FloatingLabelTextarea({ label, value, onChange, className = '', rows = 
         className={className}
         rows={rows}
         placeholder={placeholder}
+        disabled={disabled}
       />
       <div className="floating-label">
         <span className="floating-label-text">{label}</span>

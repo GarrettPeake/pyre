@@ -208,16 +208,27 @@ Users can create read-only share links from their plan using the Share button, w
 3. **Share Page** (`src/pages/SharePage.tsx`)
 
    - Read-only view for shared plans accessed via `/share/:shareId`
+   - **Uses the exact same layout as AppPage**: two-column layout with Simulation Setup + graphs on left, Financial Functions on right
    - Fetches plan data from `/api/get_share/<shareId>` on mount
-   - Displays simulation name, ages, main graphs, and financial function summary
    - Runs simulation automatically on load to render charts
-   - Header includes PYRE logo (links to home), "Read-Only View" badge, and "Create Your Own" CTA button
+   - Header includes PYRE logo (links to home), "Read-Only View" badge, and "Copy Simulation to Edit" CTA button
+   - **Copy Simulation to Edit** button:
+     - Creates a new plan with a unique UUID
+     - Copies all plan data with name set to `"<original name> (copy)"`
+     - Saves the copy to backend via `/api/save_plan/<newPlanId>`
+     - Navigates user to `/app/<newPlanId>` for editing
+     - Shows "Copying..." state while in progress
    - Shows loading spinner while fetching data
    - Shows error state with "Create Your Own Plan" link if share link is invalid or plan no longer exists
-   - Blocks are displayed as a summary list (title, date range, frequency) without edit capabilities
-   - Uses the same Chart component and simulation engine as AppPage
-   - Styled consistently with AppPage using shared CSS variables
-   - No save functionality, no edit buttons, no Share/Export/Import buttons
+   - **Simulation Setup panel** with "Show Details" / "Hide Details" toggle:
+     - When expanded, displays current age, retirement age, global initialization code, and graph configurations
+     - All fields are disabled (read-only)
+   - **Financial functions** displayed using the Block component with `readOnly={true}`:
+     - Users can click "Show Details" on any block to view its configuration (init, execution, exports)
+     - All fields are disabled, no JSON/Delete buttons
+   - Imports AppPage.css for layout consistency, with share-specific styles in SharePage.css
+   - Uses the same Chart, Block, FloatingLabelInput, FloatingLabelTextarea, and FloatingLabelSelect components as AppPage
+   - No save functionality, no Share/Export/Import buttons, no Simulate button
 
 ### Components
 
@@ -233,6 +244,7 @@ A reusable input component with animated floating label behavior. The label floa
 - `onChange`: Change handler
 - `className`: Optional CSS class for the input element
 - `placeholder`: Optional placeholder text
+- `disabled`: Optional boolean to disable the input (default: false)
 
 **FloatingLabelTextarea Component** (`src/FloatingLabelTextarea.tsx`)
 
@@ -246,6 +258,7 @@ A reusable textarea component with animated floating label behavior, sharing the
 - `className`: Optional CSS class for the textarea element (not typically needed as default styles are comprehensive)
 - `rows`: Number of rows (default: 4)
 - `placeholder`: Optional placeholder text
+- `disabled`: Optional boolean to disable the textarea (default: false)
 
 **FloatingLabelSelect Component** (`src/FloatingLabelSelect.tsx`)
 
@@ -258,6 +271,7 @@ A reusable select component with animated floating label behavior, sharing the s
 - `onChange`: Change handler
 - `className`: Optional CSS class for the select element
 - `children`: React nodes (typically `<option>` elements)
+- `disabled`: Optional boolean to disable the select (default: false)
 
 **Modal Component** (`src/components/Modal.tsx`)
 
@@ -360,6 +374,12 @@ A streamlined collapsible card component for displaying and configuring financia
   - Invalid JSON shows error message in red, valid JSON immediately updates block
   - Edit button is disabled while in JSON mode
   - Useful for power users, copy/paste workflows, and debugging
+- **Read-Only Mode** (via `readOnly` prop):
+  - "Edit" button becomes "Show Details" / "Hide Details" toggle
+  - JSON and Delete buttons are hidden
+  - All input fields (dates, inputs, frequency, init, execution, exports) are disabled
+  - Debug Graphs section is hidden
+  - Used in SharePage to display shared plans without edit capability
 
 **Content Sections (when expanded):**
 
@@ -384,6 +404,7 @@ A streamlined collapsible card component for displaying and configuring financia
 - `onChange`: Callback invoked when block state changes
 - `onDelete`: Optional callback when Delete button is clicked
 - `snapshots`: Optional SimulationSnapshot[] array from SimulationEngine for rendering graphs
+- `readOnly`: Optional boolean for read-only mode (default: false) - disables all inputs and hides edit controls
 
 **Exports:**
 
