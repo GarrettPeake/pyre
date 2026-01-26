@@ -183,6 +183,8 @@ function AppPage() {
   const [isTutorialOpen, setIsTutorialOpen] = useState<boolean>(false);
   const [showHeaderSimulate, setShowHeaderSimulate] = useState<boolean>(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [isCreatingShare, setIsCreatingShare] = useState<boolean>(false);
   const simulateButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -400,6 +402,34 @@ function AppPage() {
     ]);
   }, []);
 
+  // Create a share link
+  const handleCreateShareLink = useCallback(async () => {
+    if (!planId) return;
+
+    setIsCreatingShare(true);
+    try {
+      const response = await fetch(`/api/create_share/${planId}`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create share link");
+      }
+
+      const data = await response.json();
+      const url = `${window.location.origin}/share/${data.shareId}`;
+      setShareUrl(url);
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(url);
+    } catch (error) {
+      console.error("Error creating share link:", error);
+      alert("Failed to create share link. Please try again.");
+    } finally {
+      setIsCreatingShare(false);
+    }
+  }, [planId]);
+
   // Track visibility of original Simulate button
   useEffect(() => {
     const button = simulateButtonRef.current;
@@ -503,6 +533,26 @@ function AppPage() {
             <p className="header-link">Bookmark your secret link!</p>
           </div>
           <div className="export-import-buttons">
+            <button
+              className="share-button"
+              onClick={handleCreateShareLink}
+              disabled={isCreatingShare}
+              title="Create a read-only share link"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"
+                  fill="currentColor"
+                />
+              </svg>
+              {isCreatingShare ? "Creating..." : "Share"}
+            </button>
             <button
               className="export-button"
               onClick={handleDownloadJson}
@@ -1041,6 +1091,38 @@ function AppPage() {
           onClose={() => setIsLibraryOpen(false)}
         />
       )}
+
+      <Modal
+        isOpen={shareUrl !== null}
+        onClose={() => setShareUrl(null)}
+        title="Share Link Created"
+      >
+        <div className="share-modal-content">
+          <p>
+            Your read-only share link has been copied to the clipboard. Anyone
+            with this link can view your simulation but cannot modify it.
+          </p>
+          <div className="share-url-container">
+            <input
+              type="text"
+              value={shareUrl || ""}
+              readOnly
+              className="share-url-input"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+            <button
+              className="copy-button"
+              onClick={() => {
+                if (shareUrl) {
+                  navigator.clipboard.writeText(shareUrl);
+                }
+              }}
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -331,6 +331,146 @@ describe("Worker API", () => {
     });
   });
 
+  describe("POST /api/create_share/:planId", () => {
+    it("should return 400 if no plan ID is provided", async () => {
+      const request = createRequest("https://example.com/api/create_share/", {
+        method: "POST",
+      });
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body).toEqual({ error: "No plan ID provided" });
+    });
+
+    it("should return 404 if plan does not exist", async () => {
+      const request = createRequest(
+        "https://example.com/api/create_share/nonexistent-plan",
+        { method: "POST" }
+      );
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body).toEqual({ error: "Plan not found" });
+    });
+
+    it("should create a share link for an existing plan", async () => {
+      const planData = { simulationName: "Test Plan", currentAge: 30 };
+      mockKV._store.set("test-plan-id", JSON.stringify(planData));
+
+      const request = createRequest(
+        "https://example.com/api/create_share/test-plan-id",
+        { method: "POST" }
+      );
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { shareId: string };
+      expect(body).toHaveProperty("shareId");
+      expect(typeof body.shareId).toBe("string");
+      expect(body.shareId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      );
+    });
+
+    it("should store the share mapping in KV", async () => {
+      const planData = { simulationName: "Test Plan" };
+      mockKV._store.set("my-plan", JSON.stringify(planData));
+
+      const request = createRequest(
+        "https://example.com/api/create_share/my-plan",
+        { method: "POST" }
+      );
+      const response = await worker.fetch(request, env, mockContext);
+      const body = (await response.json()) as { shareId: string };
+
+      expect(mockKV.put).toHaveBeenCalledWith(
+        `share:${body.shareId}`,
+        "my-plan"
+      );
+    });
+
+    it("should include CORS headers", async () => {
+      const planData = { simulationName: "Test Plan" };
+      mockKV._store.set("cors-test-plan", JSON.stringify(planData));
+
+      const request = createRequest(
+        "https://example.com/api/create_share/cors-test-plan",
+        { method: "POST" }
+      );
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+      expect(response.headers.get("Content-Type")).toBe("application/json");
+    });
+  });
+
+  describe("GET /api/get_share/:shareId", () => {
+    it("should return 400 if no share ID is provided", async () => {
+      const request = createRequest("https://example.com/api/get_share/");
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body).toEqual({ error: "No share ID provided" });
+    });
+
+    it("should return 404 if share link does not exist", async () => {
+      const request = createRequest(
+        "https://example.com/api/get_share/nonexistent-share"
+      );
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body).toEqual({ error: "Share link not found" });
+    });
+
+    it("should return 404 if underlying plan no longer exists", async () => {
+      // Store a share mapping but not the actual plan
+      mockKV._store.set("share:orphan-share-id", "deleted-plan-id");
+
+      const request = createRequest(
+        "https://example.com/api/get_share/orphan-share-id"
+      );
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body).toEqual({ error: "Plan no longer exists" });
+    });
+
+    it("should return plan data for valid share link", async () => {
+      const planData = {
+        simulationName: "Shared Plan",
+        currentAge: 35,
+        retirementAge: 60,
+      };
+      mockKV._store.set("original-plan-id", JSON.stringify(planData));
+      mockKV._store.set("share:valid-share-id", "original-plan-id");
+
+      const request = createRequest(
+        "https://example.com/api/get_share/valid-share-id"
+      );
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(planData);
+    });
+
+    it("should include CORS headers", async () => {
+      const request = createRequest(
+        "https://example.com/api/get_share/some-share"
+      );
+      const response = await worker.fetch(request, env, mockContext);
+
+      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+      expect(response.headers.get("Content-Type")).toBe("application/json");
+    });
+  });
+
   describe("Integration scenarios", () => {
     it("should support save then retrieve workflow", async () => {
       const planData = {
@@ -404,6 +544,97 @@ describe("Worker API", () => {
 
       expect(await response1.json()).toEqual(plan1);
       expect(await response2.json()).toEqual(plan2);
+    });
+
+    it("should support create share then retrieve via share link workflow", async () => {
+      const planData = {
+        simulationName: "Share Workflow Test",
+        currentAge: 32,
+        retirementAge: 65,
+        globalInit: "cash = 50000",
+        blocks: [],
+      };
+      const planId = "share-workflow-plan";
+
+      // Save the plan
+      const saveRequest = createRequest(
+        `https://example.com/api/save_plan/${planId}`,
+        {
+          method: "POST",
+          body: JSON.stringify(planData),
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+      await worker.fetch(saveRequest, env, mockContext);
+
+      // Create a share link
+      const createShareRequest = createRequest(
+        `https://example.com/api/create_share/${planId}`,
+        { method: "POST" }
+      );
+      const createShareResponse = await worker.fetch(
+        createShareRequest,
+        env,
+        mockContext
+      );
+      expect(createShareResponse.status).toBe(200);
+      const { shareId } = (await createShareResponse.json()) as { shareId: string };
+
+      // Retrieve via share link
+      const getShareRequest = createRequest(
+        `https://example.com/api/get_share/${shareId}`
+      );
+      const getShareResponse = await worker.fetch(
+        getShareRequest,
+        env,
+        mockContext
+      );
+      expect(getShareResponse.status).toBe(200);
+
+      const retrievedPlan = await getShareResponse.json();
+      expect(retrievedPlan).toEqual(planData);
+    });
+
+    it("should allow multiple share links for the same plan", async () => {
+      const planData = { simulationName: "Multi-share Plan" };
+      mockKV._store.set("multi-share-plan", JSON.stringify(planData));
+
+      // Create two share links
+      const response1 = await worker.fetch(
+        createRequest("https://example.com/api/create_share/multi-share-plan", {
+          method: "POST",
+        }),
+        env,
+        mockContext
+      );
+      const response2 = await worker.fetch(
+        createRequest("https://example.com/api/create_share/multi-share-plan", {
+          method: "POST",
+        }),
+        env,
+        mockContext
+      );
+
+      const { shareId: shareId1 } = (await response1.json()) as { shareId: string };
+      const { shareId: shareId2 } = (await response2.json()) as { shareId: string };
+
+      // Both should be different
+      expect(shareId1).not.toBe(shareId2);
+
+      // Both should return the same plan
+      const getResponse1 = await worker.fetch(
+        createRequest(`https://example.com/api/get_share/${shareId1}`),
+        env,
+        mockContext
+      );
+      const getResponse2 = await worker.fetch(
+        createRequest(`https://example.com/api/get_share/${shareId2}`),
+        env,
+        mockContext
+      );
+
+      expect(await getResponse1.json()).toEqual(planData);
+      expect(await getResponse2.json()).toEqual(planData);
     });
   });
 });
