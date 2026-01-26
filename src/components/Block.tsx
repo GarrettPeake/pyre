@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 import "./Block.css";
 import FloatingLabelInput from "./FloatingLabelInput";
 import FloatingLabelTextarea from "./FloatingLabelTextarea";
@@ -122,6 +123,59 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
   };
 
   const inputNames = Object.keys(state.inputs);
+
+  // Graph manipulation handlers
+  const handleAddGraph = () => {
+    onChange({
+      ...state,
+      graphs: [
+        ...state.graphs,
+        {
+          id: uuidv4(),
+          title: "Debug Graph",
+          frequency: state.frequency,
+          verticals: [],
+          expressions: { line: [], stacked: [], bar: [] },
+        },
+      ],
+    });
+  };
+
+  const handleUpdateGraph = (
+    graphIndex: number,
+    field: keyof GraphDefinition,
+    value: string | GraphDefinition["expressions"] | GraphDefinition["frequency"]
+  ) => {
+    onChange({
+      ...state,
+      graphs: state.graphs.map((g, i) =>
+        i === graphIndex ? { ...g, [field]: value } : g
+      ),
+    });
+  };
+
+  const handleUpdateGraphExpression = (
+    graphIndex: number,
+    exprType: "line" | "stacked" | "bar",
+    value: string
+  ) => {
+    const parsedValue = value.split(",").map((s) => s.trim());
+    onChange({
+      ...state,
+      graphs: state.graphs.map((g, i) =>
+        i === graphIndex
+          ? { ...g, expressions: { ...g.expressions, [exprType]: parsedValue } }
+          : g
+      ),
+    });
+  };
+
+  const handleDeleteGraph = (graphIndex: number) => {
+    onChange({
+      ...state,
+      graphs: state.graphs.filter((_, i) => i !== graphIndex),
+    });
+  };
 
   return (
     <div className="block">
@@ -272,6 +326,88 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
                   }
                   placeholder=""
                 />
+              </div>
+
+              <div className="block-debug-graphs-section">
+                <div className="block-debug-graphs-header">
+                  <span className="block-debug-graphs-title">Debug Graphs</span>
+                  <button
+                    className="block-add-graph-button"
+                    onClick={handleAddGraph}
+                    type="button"
+                  >
+                    + Add Graph
+                  </button>
+                </div>
+
+                {state.graphs.map((graph, index) => (
+                  <div key={graph.id} className="block-graph-config-card">
+                    <div className="block-graph-config-header">
+                      <FloatingLabelInput
+                        label="Title"
+                        value={graph.title}
+                        onChange={(e) =>
+                          handleUpdateGraph(index, "title", e.target.value)
+                        }
+                      />
+                      <FloatingLabelSelect
+                        label="Frequency"
+                        value={graph.frequency}
+                        onChange={(e) =>
+                          handleUpdateGraph(
+                            index,
+                            "frequency",
+                            e.target.value as "daily" | "monthly" | "yearly"
+                          )
+                        }
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </FloatingLabelSelect>
+                      <button
+                        className="block-delete-graph-button"
+                        onClick={() => handleDeleteGraph(index)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+
+                    <div className="block-graph-expressions">
+                      <FloatingLabelInput
+                        label="Line Expressions (comma-separated)"
+                        value={graph.expressions.line?.join(", ") || ""}
+                        onChange={(e) =>
+                          handleUpdateGraphExpression(index, "line", e.target.value)
+                        }
+                        placeholder=""
+                      />
+                      <FloatingLabelInput
+                        label="Stacked Expressions (comma-separated)"
+                        value={graph.expressions.stacked?.join(", ") || ""}
+                        onChange={(e) =>
+                          handleUpdateGraphExpression(index, "stacked", e.target.value)
+                        }
+                        placeholder=""
+                      />
+                      <FloatingLabelInput
+                        label="Bar Expressions (comma-separated)"
+                        value={graph.expressions.bar?.join(", ") || ""}
+                        onChange={(e) =>
+                          handleUpdateGraphExpression(index, "bar", e.target.value)
+                        }
+                        placeholder=""
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                {state.graphs.length === 0 && (
+                  <p className="block-debug-graphs-hint">
+                    Add graphs to visualize variables while debugging your function
+                  </p>
+                )}
               </div>
             </div>
           )}
