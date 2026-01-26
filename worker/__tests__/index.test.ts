@@ -366,7 +366,7 @@ describe("Worker API", () => {
       const response = await worker.fetch(request, env, mockContext);
 
       expect(response.status).toBe(200);
-      const body = await response.json();
+      const body = (await response.json()) as { shareId: string };
       expect(body).toHaveProperty("shareId");
       expect(typeof body.shareId).toBe("string");
       expect(body.shareId).toMatch(
@@ -383,7 +383,7 @@ describe("Worker API", () => {
         { method: "POST" }
       );
       const response = await worker.fetch(request, env, mockContext);
-      const body = await response.json();
+      const body = (await response.json()) as { shareId: string };
 
       expect(mockKV.put).toHaveBeenCalledWith(
         `share:${body.shareId}`,
@@ -578,7 +578,7 @@ describe("Worker API", () => {
         mockContext
       );
       expect(createShareResponse.status).toBe(200);
-      const { shareId } = await createShareResponse.json();
+      const { shareId } = (await createShareResponse.json()) as { shareId: string };
 
       // Retrieve via share link
       const getShareRequest = createRequest(
@@ -615,8 +615,8 @@ describe("Worker API", () => {
         mockContext
       );
 
-      const { shareId: shareId1 } = await response1.json();
-      const { shareId: shareId2 } = await response2.json();
+      const { shareId: shareId1 } = (await response1.json()) as { shareId: string };
+      const { shareId: shareId2 } = (await response2.json()) as { shareId: string };
 
       // Both should be different
       expect(shareId1).not.toBe(shareId2);
