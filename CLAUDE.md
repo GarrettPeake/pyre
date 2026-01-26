@@ -124,7 +124,7 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
 
 2. **App Page** (`src/AppPage.tsx`)
 
-   - Main application interface with sticky header containing PYRE logo with info icon, plan ID with save status indicator, conditionally-shown Simulate button, and GitHub/Ko-Fi links
+   - Main application interface with sticky header containing PYRE logo with info icon, plan ID with save status indicator, Export/Import buttons, conditionally-shown Simulate button, and GitHub/Ko-Fi links
    - Info icon (next to logo) opens tutorial modal with comprehensive usage instructions
    - Sticky header shows a duplicate Simulate button when the original button in the Simulation Setup section scrolls out of view, using Intersection Observer API
    - Receives plan ID from URL params
@@ -144,6 +144,15 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
      - Green when data is saved
      - Grey when unsaved changes exist
    - SavedPlanData includes: simulationName, currentAge, retirementAge, globalInit, graphs, blocks[]
+
+   **Export/Import:**
+
+   - **Export button**: Downloads the current plan as a JSON file named `{simulationName}.json` (with non-alphanumeric characters replaced by underscores)
+   - **Import button**: Opens a file picker to import a JSON file, which replaces all current plan data
+   - Both buttons are located in the header between the plan ID and the Simulate button
+   - Import validates the JSON structure before applying: requires simulationName (string), currentAge (number), retirementAge (number), globalInit (string), graphs (array), and blocks (array)
+   - Import shows an alert if the file format is invalid
+   - Hidden file input (`fileInputRef`) handles the actual file selection for import
 
    **Simulation Execution:**
 
