@@ -5,4 +5,3 @@
 - Since implenting financial functions isn't easy we need a prebuilt library of functions that the user can simply select from as an alternative to -- or base for -- creating their own.
 - When debugging or creating a financial functions users need the ability to create debugging plots for variables within their functions.
 - The input for graphs performs live input parsing, this prevents typing a trailing comma to separate inputs. This needs to be fixed
-- When modifying a graph, currently the graph is re-rendered instantly whenever you type a character, for larger simulations this is prohibitively slow and needs to be debounced so only 1s after the most recent keypress is the graph actually allowed to update.

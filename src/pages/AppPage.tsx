@@ -10,6 +10,7 @@ import {
   runGlobalSimulation,
   type SimulationSnapshot,
 } from "../SimulationEngine";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import "./AppPage.css";
 import { v4 as uuidv4 } from "uuid";
 import { type GraphDefinition } from "../types";
@@ -341,13 +342,18 @@ function AppPage() {
     ];
   }, [currentAge, retirementAge]);
 
+  // Debounce graphs to prevent expensive Chart re-renders on every keystroke
+  // Charts will only update 1 second after the last change to graph definitions
+  const debouncedGraphs = useDebouncedValue(graphs, 1000);
+
   // Memoize graphs with verticals to prevent unnecessary Chart re-renders
+  // Uses debounced graphs so charts only re-render after typing stops
   const graphsWithVerticals = useMemo(() => {
-    return graphs.map((graphDef) => ({
+    return debouncedGraphs.map((graphDef) => ({
       ...graphDef,
       verticals: verticalIndicators,
     }));
-  }, [graphs, verticalIndicators]);
+  }, [debouncedGraphs, verticalIndicators]);
 
   return (
     <div className="app-page">
