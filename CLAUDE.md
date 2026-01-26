@@ -316,12 +316,19 @@ A streamlined collapsible card component for displaying and configuring financia
 
 **UI Modes:**
 
-- **Normal Mode**: Shows expand/collapse icon, title, date range, Edit and Delete buttons
+- **Normal Mode**: Shows expand/collapse icon, title, date range, JSON, Edit, and Delete buttons
 - **Edit Mode**:
   - Title becomes editable inline in the header
   - Comprehensive configuration form appears with all block parameters
   - Edit button becomes highlighted green "Done" button
   - Input fields remain enabled in edit mode
+- **JSON Mode**:
+  - Toggle via "JSON" button (highlighted orange when active)
+  - Shows raw JSON representation of block state (excludes graphs)
+  - Users can directly edit JSON with real-time validation
+  - Invalid JSON shows error message in red, valid JSON immediately updates block
+  - Edit button is disabled while in JSON mode
+  - Useful for power users, copy/paste workflows, and debugging
 
 **Content Sections (when expanded):**
 
