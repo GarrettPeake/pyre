@@ -93,10 +93,14 @@ This project uses Cloudflare workers to serve both the front and backend. The ba
 
 ## Backend Architecture
 
-The backend is intentionally simple - all computational logic runs on the frontend. The backend worker serves only two purposes:
+The backend is intentionally simple - all computational logic runs on the frontend. The backend worker serves the following purposes:
 
 1. **`/api/get_plan/<key>`** - Retrieves saved financial plans from Cloudflare KV storage
 2. **`/api/save_plan/<key>`** - Saves financial plans to Cloudflare KV storage
+3. **`/api/create_share/<planId>`** - Creates a read-only share link for an existing plan (returns `{ shareId }`)
+4. **`/api/get_share/<shareId>`** - Retrieves plan data via a share link (read-only access)
+
+Share links are stored in KV as `share:{shareId} -> planId` mappings, allowing multiple share links per plan and ensuring updates to the original plan are reflected in all share links.
 
 All calculations, block execution, and financial modeling happen client-side. The backend is purely a persistence layer using Cloudflare's KV store with the `FINANCIAL_PLANS` binding.
 
@@ -108,8 +112,11 @@ The frontend uses React with React Router for navigation. The application has tw
 
 - **`/`** - Splash page (landing page)
 - **`/app/:planId`** - Main application page with a unique plan ID
+- **`/share/:shareId`** - Read-only view of a shared plan
 
 When users click "Start with examples" or "Start from scratch" on the splash page, a new UUID is generated and they are navigated to `/app/<uuid>`. This UUID serves as the unique identifier for their financial plan and will be used for saving/loading plans via the backend API.
+
+Users can create read-only share links from their plan using the Share button, which generates a unique share URL. Recipients of share links can view the simulation and graphs but cannot modify the plan.
 
 ### Pages
 
@@ -145,11 +152,21 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
      - Grey when unsaved changes exist
    - SavedPlanData includes: simulationName, currentAge, retirementAge, globalInit, graphs, blocks[]
 
+   **Share Links:**
+
+   - **Share button**: Creates a read-only share link for the current plan
+   - Calls `/api/create_share/<planId>` to generate a unique share UUID
+   - Opens a modal displaying the share URL with copy-to-clipboard functionality
+   - Share URL is automatically copied to clipboard when created
+   - Share links point to `/share/<shareId>` which displays a read-only view
+   - Multiple share links can be created for the same plan
+   - Updates to the original plan are reflected in all share links
+
    **Export/Import:**
 
    - **Export button**: Downloads the current plan as a JSON file named `{simulationName}.json` (with non-alphanumeric characters replaced by underscores)
    - **Import button**: Opens a file picker to import a JSON file, which replaces all current plan data
-   - Both buttons are located in the header between the plan ID and the Simulate button
+   - Share, Export, and Import buttons are located in the header between the plan ID and the Simulate button
    - Import validates the JSON structure before applying: requires simulationName (string), currentAge (number), retirementAge (number), globalInit (string), graphs (array), and blocks (array)
    - Import shows an alert if the file format is invalid
    - Hidden file input (`fileInputRef`) handles the actual file selection for import
@@ -187,6 +204,20 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
      - Uses flexbox with `flex: 1` for equal-width columns
      - Header content expands to 1650px max-width to match the wider content area
      - Both columns have independent scrolling when content overflows
+
+3. **Share Page** (`src/pages/SharePage.tsx`)
+
+   - Read-only view for shared plans accessed via `/share/:shareId`
+   - Fetches plan data from `/api/get_share/<shareId>` on mount
+   - Displays simulation name, ages, main graphs, and financial function summary
+   - Runs simulation automatically on load to render charts
+   - Header includes PYRE logo (links to home), "Read-Only View" badge, and "Create Your Own" CTA button
+   - Shows loading spinner while fetching data
+   - Shows error state with "Create Your Own Plan" link if share link is invalid or plan no longer exists
+   - Blocks are displayed as a summary list (title, date range, frequency) without edit capabilities
+   - Uses the same Chart component and simulation engine as AppPage
+   - Styled consistently with AppPage using shared CSS variables
+   - No save functionality, no edit buttons, no Share/Export/Import buttons
 
 ### Components
 
@@ -566,7 +597,7 @@ Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-w
 
 **Commands:**
 
-- `npm test` - Run all tests once (124 tests across 3 test files)
+- `npm test` - Run all tests once (136 tests across 3 test files)
 - `npm run test:watch` - Run tests in watch mode
 
 **Test Files:**
@@ -593,12 +624,14 @@ Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-w
    - Complex financial scenarios (savings accumulation, compound growth)
    - Error handling (graceful handling of invalid code in init/execution)
 
-3. **`worker/__tests__/index.test.ts`** (19 tests) - Tests for the backend API:
+3. **`worker/__tests__/index.test.ts`** (31 tests) - Tests for the backend API:
    - GET `/api/get_plan/:key` (missing key, plan not found, successful retrieval, CORS headers)
    - POST `/api/save_plan/:key` (missing key, successful save, overwriting existing, large plans)
+   - POST `/api/create_share/:planId` (missing plan ID, plan not found, successful creation, UUID format validation, KV storage verification, CORS headers)
+   - GET `/api/get_share/:shareId` (missing share ID, share link not found, orphaned share link, successful retrieval, CORS headers)
    - Unknown routes (404 handling)
    - Error handling (KV read/write errors, invalid JSON, CORS on errors)
-   - Integration scenarios (save-then-retrieve workflow, multiple independent plans)
+   - Integration scenarios (save-then-retrieve workflow, multiple independent plans, create-share-then-retrieve workflow, multiple share links per plan)
 
 **Configuration:**
 
