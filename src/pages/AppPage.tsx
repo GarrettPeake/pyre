@@ -937,6 +937,7 @@ function AppPage() {
                   onDelete={() =>
                     setBlocks((prev) => prev.filter((b) => b.id !== block.id))
                   }
+                  snapshots={simulationSnapshots}
                 />
               ))}
             </div>

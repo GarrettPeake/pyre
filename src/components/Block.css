@@ -294,3 +294,105 @@
 .block-json-section.has-error .block-json-editor {
   border-color: var(--color-cancel);
 }
+
+/* Debug Graphs Section */
+.block-debug-graphs-section {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.block-debug-graphs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.block-debug-graphs-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.block-add-graph-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: var(--color-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.block-add-graph-button:hover {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.block-graph-config-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.block-graph-config-card:last-child {
+  margin-bottom: 0;
+}
+
+.block-graph-config-header {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: flex-start;
+  margin-bottom: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.block-graph-config-header > * {
+  flex-shrink: 0;
+}
+
+.block-graph-config-header > .floating-input-container:first-child {
+  flex: 1;
+  min-width: 150px;
+}
+
+.block-delete-graph-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-cancel);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: var(--color-cancel);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.block-delete-graph-button:hover {
+  background-color: #ffebee;
+}
+
+.block-graph-expressions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.block-debug-graphs-hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-style: italic;
+  margin: 0;
+  text-align: center;
+  padding: var(--spacing-sm);
+}
+
+/* Graphs Display Section */
+.block-graphs-display {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border-light);
+}

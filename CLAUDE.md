@@ -368,8 +368,15 @@ A streamlined collapsible card component for displaying and configuring financia
    - Initialization textarea for init calculations
    - Execution textarea for per-period calculations
    - Exported Variables input for comma-separated list of variables to export to global scope
-2. **Inputs**: Dynamic grid of input fields based on comma-separated inputs configuration (shown in header row)
-3. **Custom Graphs**: When not in edit mode and graphs are defined, renders each graph using the Chart component with simulation snapshots
+   - Debug Graphs section for creating visualizations to debug block variables
+2. **Debug Graphs** (edit mode only):
+   - "+ Add Graph" button creates new graph with default settings matching block frequency
+   - Each graph card has: Title input, Frequency selector, Delete button
+   - Expression inputs: Line, Stacked, and Bar (comma-separated variable expressions)
+   - Allows users to visualize any variables while developing financial functions
+   - Graphs render in normal mode (when not editing) using the Chart component
+3. **Inputs**: Dynamic grid of input fields based on comma-separated inputs configuration (shown in header row)
+4. **Custom Graphs**: When not in edit mode and graphs are defined, renders each graph using the Chart component with simulation snapshots
 
 **Props:**
 
