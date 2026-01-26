@@ -123,6 +123,39 @@
   color: var(--color-neutral-400);
 }
 
+.export-import-buttons {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.export-button,
+.import-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: 500;
+}
+
+.export-button:hover,
+.import-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.export-button svg,
+.import-button svg {
+  flex-shrink: 0;
+}
+
 .header-link:hover {
   color: var(--color-accent-orange);
 }

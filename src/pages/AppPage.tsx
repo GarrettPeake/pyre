@@ -181,6 +181,7 @@ function AppPage() {
   const [isTutorialOpen, setIsTutorialOpen] = useState<boolean>(false);
   const [showHeaderSimulate, setShowHeaderSimulate] = useState<boolean>(false);
   const simulateButtonRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load plan data from backend on mount
   useEffect(() => {
@@ -306,6 +307,82 @@ function AppPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 
+  // Download plan as JSON file
+  const handleDownloadJson = useCallback(() => {
+    const planData: SavedPlanData = {
+      simulationName,
+      currentAge,
+      retirementAge,
+      globalInit,
+      graphs,
+      blocks: blocks.map((block) => ({
+        id: block.id,
+        state: block.state,
+      })),
+    };
+
+    const jsonString = JSON.stringify(planData, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${simulationName.replace(/[^a-z0-9]/gi, "_")}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [simulationName, currentAge, retirementAge, globalInit, graphs, blocks]);
+
+  // Import plan from JSON file
+  const handleImportJson = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const content = e.target?.result as string;
+          const data = JSON.parse(content) as SavedPlanData;
+
+          // Validate required fields exist
+          if (
+            typeof data.simulationName !== "string" ||
+            typeof data.currentAge !== "number" ||
+            typeof data.retirementAge !== "number" ||
+            typeof data.globalInit !== "string" ||
+            !Array.isArray(data.graphs) ||
+            !Array.isArray(data.blocks)
+          ) {
+            throw new Error("Invalid plan format");
+          }
+
+          // Apply imported data
+          setSimulationName(data.simulationName);
+          setCurrentAge(data.currentAge);
+          setRetirementAge(data.retirementAge);
+          setGlobalInit(data.globalInit);
+          setGraphs(data.graphs);
+          setBlocks(
+            data.blocks.map((block) => ({
+              id: block.id || uuidv4(),
+              state: block.state,
+            }))
+          );
+        } catch (error) {
+          console.error("Failed to import plan:", error);
+          alert("Failed to import plan. Please check the file format.");
+        }
+      };
+      reader.readAsText(file);
+
+      // Reset file input so the same file can be imported again
+      event.target.value = "";
+    },
+    []
+  );
+
   // Track visibility of original Simulate button
   useEffect(() => {
     const button = simulateButtonRef.current;
@@ -407,6 +484,61 @@ function AppPage() {
               </svg>
             </div>
             <p className="header-link">Bookmark your secret link!</p>
+          </div>
+          <div className="export-import-buttons">
+            <button
+              className="export-button"
+              onClick={handleDownloadJson}
+              title="Download simulation as JSON"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M12 16l-6-6h4V4h4v6h4l-6 6z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M20 18H4v2h16v-2z"
+                  fill="currentColor"
+                />
+              </svg>
+              Export
+            </button>
+            <button
+              className="import-button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Import simulation from JSON"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M12 8l6 6h-4v6h-4v-6H6l6-6z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M20 4H4v2h16V4z"
+                  fill="currentColor"
+                />
+              </svg>
+              Import
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportJson}
+              style={{ display: "none" }}
+            />
           </div>
           {showHeaderSimulate && (
             <button
