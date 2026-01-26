@@ -71,7 +71,7 @@ When the user wants to add this to their financial plan, they simply add this bl
 
 The block receives default inputs such as the length of the block period which you can see was used in the original block without being defined as well as all of the global variables
 
-Eventually, the program will maintain a library of these different block types
+The program maintains a library of prebuilt block templates (see BlockLibrary Component section) that users can select from instead of creating blocks from scratch
 
 ```
 -- Default Inputs
@@ -132,7 +132,7 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
    - Overview card containing:
      - Age inputs row with FloatingLabelInput components: Current Age and Target Retirement Age (default 25 and 65)
      - Main charts defined by the user with vertical lines indicting the current and target retirement ages
-   - Financial Blocks section with collapsible block cards (see Block component below)
+   - Financial Blocks section with collapsible block cards (see Block component below) and header with "Library" button to add prebuilt templates and "+" button to add blank blocks
    - Informationally dense layout with compact spacing (1000px max width)
 
    **Backend Integration:**
@@ -351,6 +351,66 @@ A streamlined collapsible card component for displaying and configuring financia
 
 - `Block` (default): The Block component
 - `BlockState` (type): Type definition for block configuration state
+
+**BlockLibrary Component** (`src/components/BlockLibrary.tsx`)
+
+A modal component that displays prebuilt financial block templates organized by category. Users can browse the library and add templates to their plan instead of creating blocks from scratch.
+
+**Props:**
+
+- `onSelectTemplate`: Callback invoked with the selected BlockTemplate when user clicks a template
+- `onClose`: Callback to close the modal
+
+**Features:**
+
+- **Two-level Navigation**: First shows category cards (Income, Investments, Loans, Expenses), then shows templates within selected category
+- **Category Cards**: Display category icon, label, and template count with category-specific color gradients
+- **Template Cards**: Show template name, description, and input parameter tags
+- **Back Navigation**: Users can return from template list to category selection
+- **Click-to-Add**: Clicking a template immediately adds it to the plan and closes the modal
+
+**Categories:**
+
+- **Income**: Salary, Social Security, Rental Income
+- **Investments**: 401(k) Contributions, Roth IRA, Brokerage Investments, Bond Portfolio
+- **Loans**: Home Loan, Car Loan, Student Loan
+- **Expenses**: Monthly Expenses, Emergency Fund, Healthcare Costs
+
+**Usage in AppPage:**
+
+- "Library" button in Financial Functions header opens the BlockLibrary modal
+- Selected templates are converted to BlockState objects and added to the blocks array
+
+### Block Templates Module (`src/blockTemplates.ts`)
+
+A data module containing prebuilt financial block templates. Each template is a fully-configured BlockState ready for use.
+
+**Types:**
+
+- `BlockTemplate`: Interface for template definitions with id, name, category, description, and state
+
+**Exported Functions:**
+
+- `getTemplatesByCategory(category)`: Returns templates filtered by category
+- `getTemplateCategories()`: Returns all categories with their templates grouped
+
+**Available Templates (13 total):**
+
+| Category | Template | Description |
+|----------|----------|-------------|
+| Loans | Home Loan | 30-year mortgage with standard amortization |
+| Loans | Car Loan | 5-year auto loan with depreciation tracking |
+| Loans | Student Loan | 10-year federal student loan repayment |
+| Income | Monthly Salary | Net income with annual raises |
+| Income | Social Security | Retirement benefits with COLA adjustments |
+| Income | Rental Income | Property income with vacancy/maintenance rates |
+| Investments | 401(k) Contributions | Employer-matched retirement contributions |
+| Investments | Roth IRA | Tax-advantaged retirement account |
+| Investments | Brokerage Investments | Taxable investment account |
+| Investments | Bond Portfolio | Conservative fixed-income investments |
+| Expenses | Monthly Expenses | Living costs with inflation |
+| Expenses | Emergency Fund | Savings with target amount |
+| Expenses | Healthcare Costs | Medical expenses with above-inflation growth |
 
 ### Hooks
 
