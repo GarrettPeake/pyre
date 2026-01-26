@@ -81,7 +81,7 @@ periods_from_start
 
 # User Flow
 
-After entering their initialization parameters, the user starts creating blocks. These blocks use a simple math language, but in reality are evaluated using `eval()` on the frontend, we simply disallow the use of /:{}[]'"`<> and restrict the character following a period to be a number to prevent actual code execution.
+After entering their initialization parameters, the user starts creating blocks. These blocks use a simple math language, but in reality are evaluated using `Function()` on the frontend. Security is enforced by disallowing dangerous characters (`/:{}[]'"\`<>`), restricting periods to be followed by digits (decimal numbers only), and blocking dangerous JavaScript keywords (see MathLangUtils Security section for full list).
 
 After the user has defined their init and execution, they can fill in the inputs and press run to see the entire simulation update. During this update the `Graph` values are shown in the dropdown of the block using the specified chart type.
 
@@ -387,6 +387,16 @@ A utility module providing secure math language evaluation with strict character
 - Periods must be followed by digits (decimal numbers only) to prevent property access
 - Comment lines (starting with `#`) are filtered out before execution
 - Expressions are wrapped in try-catch to handle errors gracefully
+- **Blocked Keywords**: A comprehensive blocklist prevents use of dangerous JavaScript globals including:
+  - DOM/window access: `document`, `window`, `self`, `globalThis`, `top`, `parent`, `frames`
+  - Network APIs: `fetch`, `XMLHttpRequest`, `WebSocket`, `Worker`, `importScripts`
+  - User dialogs: `alert`, `confirm`, `prompt`
+  - Code execution: `eval`, `Function`, `constructor`, `prototype`, `__proto__`
+  - Storage: `localStorage`, `sessionStorage`, `indexedDB`
+  - Navigation: `location`, `history`, `navigator`
+  - Timing: `setTimeout`, `setInterval`, `requestAnimationFrame`
+  - Other: `console`, `crypto`, `atob`, `btoa`, `this`, `Proxy`, `Reflect`, `Symbol`
+- The `containsBlockedKeyword()` helper uses word-boundary regex matching to avoid false positives (e.g., "documentation" won't match "document")
 
 ### Styling
 
@@ -442,6 +452,31 @@ This example showcases:
 ### Dependencies
 
 - **D3.js** (`d3`, `@types/d3`) - Used for all graph visualizations throughout the application
+- **Vitest** (`vitest`, `@cloudflare/vitest-pool-workers`) - Unit testing framework with Cloudflare Workers runtime support
+
+### Testing
+
+Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-workers`.
+
+**Commands:**
+
+- `npm test` - Run all tests once
+- `npm run test:watch` - Run tests in watch mode
+
+**Test Files:**
+
+- `src/__tests__/MathLangUtils.test.ts` - Tests for the math language security and evaluation:
+  - Basic math operations (addition, multiplication, decimals)
+  - Blocked keyword security (document, window, fetch, alert, eval, etc.)
+  - Word boundary matching (ensures variables like "documentation" aren't blocked)
+  - Dangerous character blocking (braces, brackets, quotes, backslash)
+  - Period validation (decimals allowed, property access blocked)
+  - executeCode function tests
+
+**Configuration:**
+
+- `vitest.config.ts` - Vitest configuration using Cloudflare Workers pool
+- `wrangler.toml` - Minimal wrangler config for test runtime
 
 # Rules
 
@@ -451,5 +486,6 @@ This example showcases:
 - Never place CSS inside the typescript files, it must all be kept within .css files
 - Never run dev or build commands, just instruct the user to check that your work succeeded by telling them what to look for
 - Your task cannot be considered complete until you have reflected the work you did in ./CLAUDE.md. Your changes should be concise, highly targeted, and update any now-outdated information.
+- **ALWAYS update CLAUDE.md after making changes to the codebase.** This includes documenting new features, security changes, architectural decisions, and any modifications to existing functionality. Keep updates focused and relevant.
 - Do not make up CSS variables, if you need to know what colors are available in the palette, you must read variables.css
 - You have access to src/types.ts please use it when following TypeScript best practices

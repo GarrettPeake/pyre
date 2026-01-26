@@ -1,8 +1,77 @@
 /**
+ * Blocklist of dangerous JavaScript keywords and globals that could enable
+ * XSS attacks, data exfiltration, or other security issues.
+ * These are blocked to ensure the math language can only perform calculations.
+ */
+const BLOCKED_KEYWORDS = [
+  // DOM and window access
+  "document",
+  "window",
+  "self",
+  "globalThis",
+  "top",
+  "parent",
+  "frames",
+  // Network APIs
+  "fetch",
+  "XMLHttpRequest",
+  "WebSocket",
+  "Worker",
+  "importScripts",
+  // User dialogs
+  "alert",
+  "confirm",
+  "prompt",
+  // Code execution
+  "eval",
+  "Function",
+  "constructor",
+  "prototype",
+  "__proto__",
+  // Storage
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+  // Navigation
+  "location",
+  "history",
+  "navigator",
+  // Timing (could be used for side-channel attacks)
+  "setTimeout",
+  "setInterval",
+  "requestAnimationFrame",
+  // Other potentially dangerous globals
+  "console",
+  "crypto",
+  "atob",
+  "btoa",
+  "this",
+  "Proxy",
+  "Reflect",
+  "Symbol",
+];
+
+/**
+ * Checks if an expression contains any blocked keywords.
+ * Uses word boundary matching to avoid false positives (e.g., "documentation" should not match "document").
+ */
+function containsBlockedKeyword(expr: string): string | null {
+  for (const keyword of BLOCKED_KEYWORDS) {
+    // Use word boundary regex to match whole words only
+    const regex = new RegExp(`\\b${keyword}\\b`);
+    if (regex.test(expr)) {
+      return keyword;
+    }
+  }
+  return null;
+}
+
+/**
  * Executes JavaScript code in a restricted context.
  * Every statement must be an assignment and is used to update the context
  * Prevents use of dangerous characters: { } [ ] ' " ` / : #
  * Periods are only allowed when followed by digits (for decimal numbers)
+ * Blocks dangerous JavaScript keywords to prevent XSS and code injection
  */
 export function executeCode(
   code: string,
@@ -42,6 +111,16 @@ export function evaluateExpression(
   if (/[{}[\]`'"\\]/.test(expr)) {
     console.error(
       "Expression contains disallowed characters (/[{}[\\]`'\"\\\\:]/):",
+      expr
+    );
+    return 0;
+  }
+
+  // Security check - block dangerous JavaScript keywords
+  const blockedKeyword = containsBlockedKeyword(expr);
+  if (blockedKeyword) {
+    console.error(
+      `Expression contains blocked keyword "${blockedKeyword}":`,
       expr
     );
     return 0;
