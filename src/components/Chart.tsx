@@ -1,8 +1,21 @@
-import { useEffect, useRef, memo } from "react";
+import { useEffect, useRef, memo, useState, useCallback } from "react";
 import * as d3 from "d3";
 import "./Chart.css";
 import type { GraphDefinition, SimulationSnapshot } from "../types";
 import { evaluateExpression } from "../MathLangUtils";
+
+interface HoverData {
+  date: Date;
+  values: Record<string, number>;
+  x: number;
+  y: number;
+}
+
+interface LegendItem {
+  expr: string;
+  color: string;
+  type: "line" | "stacked" | "bar";
+}
 
 export interface ChartVertical {
   position: number;
@@ -113,8 +126,115 @@ function buildChartData(
   return { data, allExpressions };
 }
 
+/**
+ * Builds legend items with consistent colors matching chart rendering.
+ */
+function buildLegendItems(graphDefinition: GraphDefinition): LegendItem[] {
+  const items: LegendItem[] = [];
+  let colorIndex = 0;
+
+  // Bar expressions first (rendered as bottom layer)
+  (graphDefinition.expressions.bar || []).forEach((expr) => {
+    items.push({
+      expr,
+      color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
+      type: "bar",
+    });
+    colorIndex++;
+  });
+
+  // Stacked expressions (middle layer)
+  (graphDefinition.expressions.stacked || []).forEach((expr) => {
+    items.push({
+      expr,
+      color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
+      type: "stacked",
+    });
+    colorIndex++;
+  });
+
+  // Line expressions (top layer)
+  (graphDefinition.expressions.line || []).forEach((expr) => {
+    items.push({
+      expr,
+      color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
+      type: "line",
+    });
+    colorIndex++;
+  });
+
+  return items;
+}
+
+/**
+ * Formats a number for display in tooltip.
+ */
+function formatValue(value: number): string {
+  if (Math.abs(value) >= 1000000) {
+    return (value / 1000000).toFixed(2) + "M";
+  } else if (Math.abs(value) >= 1000) {
+    return (value / 1000).toFixed(1) + "K";
+  }
+  return value.toFixed(2);
+}
+
 const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
   const chartRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoverData, setHoverData] = useState<HoverData | null>(null);
+  const chartDataRef = useRef<ChartDataPoint[]>([]);
+  const xScaleRef = useRef<d3.ScaleTime<number, number> | null>(null);
+
+  // Build legend items (memoized via dependency)
+  const legendItems = buildLegendItems(graphDefinition);
+
+  // Handle mouse move on chart
+  const handleMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
+    if (!xScaleRef.current || chartDataRef.current.length === 0 || !containerRef.current) return;
+
+    const svg = chartRef.current;
+    if (!svg) return;
+
+    const rect = svg.getBoundingClientRect();
+    const margin = { left: 84 }; // Match the chart margin
+    const mouseX = event.clientX - rect.left - margin.left;
+
+    // Find closest data point
+    const xScale = xScaleRef.current;
+    const hoveredDate = xScale.invert(mouseX);
+    const bisect = d3.bisector<ChartDataPoint, Date>((d) => d.date).left;
+    const index = bisect(chartDataRef.current, hoveredDate);
+
+    // Get the closest point
+    let closestPoint: ChartDataPoint | null = null;
+    if (index === 0) {
+      closestPoint = chartDataRef.current[0];
+    } else if (index >= chartDataRef.current.length) {
+      closestPoint = chartDataRef.current[chartDataRef.current.length - 1];
+    } else {
+      const d0 = chartDataRef.current[index - 1];
+      const d1 = chartDataRef.current[index];
+      closestPoint = hoveredDate.getTime() - d0.date.getTime() > d1.date.getTime() - hoveredDate.getTime() ? d1 : d0;
+    }
+
+    if (closestPoint) {
+      const values: Record<string, number> = {};
+      legendItems.forEach((item) => {
+        values[item.expr] = closestPoint![item.expr] as number;
+      });
+
+      setHoverData({
+        date: closestPoint.date,
+        values,
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+    }
+  }, [legendItems]);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoverData(null);
+  }, []);
 
   useEffect(() => {
     if (!chartRef.current || snapshots.length === 0) return;
@@ -123,6 +243,9 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
     const { data } = buildChartData(graphDefinition, snapshots);
 
     if (data.length === 0) return;
+
+    // Store data for hover functionality
+    chartDataRef.current = data;
 
     const svg = d3.select(chartRef.current);
     svg.selectAll("*").remove();
@@ -154,6 +277,9 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
       .scaleTime()
       .domain(d3.extent(data, (d) => d.date) as [Date, Date])
       .range([0, width + 90]);
+
+    // Store x scale for hover functionality
+    xScaleRef.current = x;
 
     // Y scale - calculate domain based on all data values
     let yMin = 0;
@@ -374,9 +500,60 @@ const Chart = memo(function Chart({ graphDefinition, snapshots }: ChartProps) {
   }, [graphDefinition, snapshots]);
 
   return (
-    <div className="chart-container">
+    <div className="chart-container" ref={containerRef}>
       {snapshots.length > 0 ? (
-        <svg ref={chartRef} className="chart-svg"></svg>
+        <>
+          <svg
+            ref={chartRef}
+            className="chart-svg"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          ></svg>
+          {/* Hover tooltip */}
+          {hoverData && (
+            <div
+              className="chart-tooltip"
+              style={{
+                left: hoverData.x + 15,
+                top: hoverData.y - 10,
+              }}
+            >
+              <div className="chart-tooltip-date">
+                {hoverData.date.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </div>
+              <div className="chart-tooltip-values">
+                {legendItems.map((item) => (
+                  <div key={item.expr} className="chart-tooltip-row">
+                    <span
+                      className="chart-tooltip-swatch"
+                      style={{ backgroundColor: item.color }}
+                    ></span>
+                    <span className="chart-tooltip-label">{item.expr}:</span>
+                    <span className="chart-tooltip-value">
+                      {formatValue(hoverData.values[item.expr] ?? 0)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Always-visible legend */}
+          <div className="chart-legend">
+            {legendItems.map((item) => (
+              <div key={item.expr} className="chart-legend-item">
+                <span
+                  className="chart-legend-swatch"
+                  style={{ backgroundColor: item.color }}
+                ></span>
+                <span className="chart-legend-label">{item.expr}</span>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <div className="chart-placeholder">No data to display</div>
       )}

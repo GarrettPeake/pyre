@@ -270,6 +270,11 @@ A reusable, D3-powered chart component for rendering financial data visualizatio
 - **Automatic Scaling**: Axes scale based on all data values with 10% padding
 - **Error Handling**: Gracefully handles expression evaluation errors (defaults to 0)
 - **Performance**: Memoized with `React.memo` to only re-render when `graphDefinition` or `snapshots` props change
+- **Always-Visible Legend**: Displays a legend below the chart showing color swatches and expression names for all data series (bar, stacked, and line expressions), enabling users to understand what each color represents
+- **Hover Tooltip**: When users hover over the chart, a tooltip appears showing:
+  - The date at the hovered position
+  - All variable values at that date with color swatches matching the legend
+  - Values are formatted with K/M suffixes for readability (e.g., "100K", "1.5M")
 
 **Data Flow:**
 
@@ -284,6 +289,8 @@ A reusable, D3-powered chart component for rendering financial data visualizatio
 - `sampleSnapshots()`: Filters snapshots to match frequency (daily/monthly/yearly)
 - `evaluateExpressionsForSnapshot()`: Evaluates all expressions using snapshot context
 - `buildChartData()`: Orchestrates sampling and evaluation to build chart data
+- `buildLegendItems()`: Builds legend items with consistent colors matching chart rendering order (bar → stacked → line)
+- `formatValue()`: Formats numbers for tooltip display with K/M suffixes
 
 **Block Component** (`src/components/Block.tsx`)
 
