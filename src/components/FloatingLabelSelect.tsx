@@ -7,6 +7,7 @@ interface FloatingLabelSelectProps {
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   className?: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }
 
 function FloatingLabelSelect({
@@ -15,6 +16,7 @@ function FloatingLabelSelect({
   onChange,
   className = "",
   children,
+  disabled = false,
 }: FloatingLabelSelectProps) {
   const selectRef = useRef<HTMLSelectElement>(null);
 
@@ -31,6 +33,7 @@ function FloatingLabelSelect({
         value={value}
         onChange={onChange}
         className={className + " floating-input-field"}
+        disabled={disabled}
       >
         {children}
       </select>

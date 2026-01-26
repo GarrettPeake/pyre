@@ -8,6 +8,7 @@ interface FloatingLabelInputProps {
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   className?: string;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 function FloatingLabelInput({
@@ -17,6 +18,7 @@ function FloatingLabelInput({
   onChange,
   className = "",
   placeholder,
+  disabled = false,
 }: FloatingLabelInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -38,6 +40,7 @@ function FloatingLabelInput({
         className={className + " floating-input-field"}
         placeholder={placeholder}
         onClick={(e) => e.stopPropagation()}
+        disabled={disabled}
       />
       <div className="floating-label">
         <span

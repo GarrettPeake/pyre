@@ -1,13 +1,18 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { v4 as uuidv4 } from "uuid";
 import Chart from "../components/Chart";
+import Block, { type BlockState } from "../components/Block";
+import FloatingLabelInput from "../components/FloatingLabelInput";
+import FloatingLabelTextarea from "../components/FloatingLabelTextarea";
+import FloatingLabelSelect from "../components/FloatingLabelSelect";
 import {
   runGlobalSimulation,
   type SimulationSnapshot,
 } from "../SimulationEngine";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { type GraphDefinition } from "../types";
-import { type BlockState } from "../components/Block";
+import "./AppPage.css";
 import "./SharePage.css";
 
 interface BlockData {
@@ -43,12 +48,15 @@ async function fetchSharedPlan(shareId: string): Promise<SavedPlanData | null> {
 
 function SharePage() {
   const { shareId } = useParams<{ shareId: string }>();
+  const navigate = useNavigate();
   const [planData, setPlanData] = useState<SavedPlanData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [simulationSnapshots, setSimulationSnapshots] = useState<
     SimulationSnapshot[]
   >([]);
+  const [isShowingSetupDetails, setIsShowingSetupDetails] = useState<boolean>(false);
+  const [isCopying, setIsCopying] = useState<boolean>(false);
 
   // Load shared plan data on mount
   useEffect(() => {
@@ -129,6 +137,39 @@ function SharePage() {
     }));
   }, [debouncedGraphs, verticalIndicators]);
 
+  // Copy simulation to a new editable plan
+  const handleCopySimulation = useCallback(async () => {
+    if (!planData) return;
+
+    setIsCopying(true);
+    try {
+      const newPlanId = uuidv4();
+      const copiedPlanData: SavedPlanData = {
+        ...planData,
+        simulationName: `${planData.simulationName} (copy)`,
+      };
+
+      const response = await fetch(`/api/save_plan/${newPlanId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(copiedPlanData),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to copy simulation");
+      }
+
+      navigate(`/app/${newPlanId}`);
+    } catch (err) {
+      console.error("Error copying simulation:", err);
+      alert("Failed to copy simulation. Please try again.");
+    } finally {
+      setIsCopying(false);
+    }
+  }, [planData, navigate]);
+
   if (isLoading) {
     return (
       <div className="share-page">
@@ -155,8 +196,8 @@ function SharePage() {
   }
 
   return (
-    <div className="share-page">
-      <header className="share-header">
+    <div className="app-page">
+      <header className="app-header">
         <div className="header-content">
           <div className="header-logo">
             <Link to="/" className="logo-link">
@@ -178,69 +219,164 @@ function SharePage() {
             </svg>
             Read-Only View
           </div>
-          <Link to="/" className="create-own-button">
-            Create Your Own
-          </Link>
+          <button
+            className="create-own-button"
+            onClick={handleCopySimulation}
+            disabled={isCopying}
+          >
+            {isCopying ? "Copying..." : "Copy Simulation to Edit"}
+          </button>
         </div>
       </header>
 
-      <main className="share-main">
-        <div className="share-content">
-          {/* Simulation Info */}
-          <section className="share-info-card">
-            <h2 className="share-plan-title">{planData.simulationName}</h2>
-            <div className="share-plan-details">
-              <span>
-                Current Age: <strong>{planData.currentAge}</strong>
-              </span>
-              <span>
-                Retirement Age: <strong>{planData.retirementAge}</strong>
-              </span>
+      <main className="app-main">
+        <div className="app-content">
+          {/* Left Column: Simulation Setup and Graphs */}
+          <div className="left-column">
+            {/* Simulation Setup Section */}
+            <section className="simulation-setup-card">
+              <div
+                className={
+                  isShowingSetupDetails
+                    ? "setup-header-expanded setup-header"
+                    : "setup-header"
+                }
+              >
+                <h2 className="setup-title">{planData.simulationName}</h2>
+                <div className="setup-buttons">
+                  <button
+                    className={`setup-edit-button ${
+                      isShowingSetupDetails ? "editing" : ""
+                    }`}
+                    onClick={() => setIsShowingSetupDetails(!isShowingSetupDetails)}
+                  >
+                    {isShowingSetupDetails ? "Hide Details" : "Show Details"}
+                  </button>
+                </div>
+              </div>
+
+              {isShowingSetupDetails && (
+                <div className="setup-content">
+                  <div className="age-inputs-row">
+                    <FloatingLabelInput
+                      label="Current Age"
+                      type="number"
+                      value={planData.currentAge}
+                      onChange={() => {}}
+                      disabled={true}
+                    />
+                    <FloatingLabelInput
+                      label="Target Retirement Age"
+                      type="number"
+                      value={planData.retirementAge}
+                      onChange={() => {}}
+                      disabled={true}
+                    />
+                  </div>
+
+                  <div className="global-init-section">
+                    <FloatingLabelTextarea
+                      label="Simulation Initialization"
+                      value={planData.globalInit}
+                      onChange={() => {}}
+                      rows={6}
+                      placeholder=""
+                      disabled={true}
+                    />
+                  </div>
+
+                  <div className="graphs-config-section">
+                    <div className="graphs-config-header">
+                      <h3 className="graphs-config-title">Main Graphs</h3>
+                    </div>
+
+                    {planData.graphs.map((graph) => (
+                      <div key={graph.id} className="graph-config-card">
+                        <div className="graph-config-header">
+                          <FloatingLabelInput
+                            label="Title"
+                            value={graph.title}
+                            onChange={() => {}}
+                            disabled={true}
+                          />
+                          <FloatingLabelSelect
+                            label="Frequency"
+                            value={graph.frequency}
+                            onChange={() => {}}
+                            disabled={true}
+                          >
+                            <option value="daily">Daily</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                          </FloatingLabelSelect>
+                        </div>
+
+                        <div className="graph-config-expressions">
+                          <FloatingLabelInput
+                            label="Line Expressions (comma-separated)"
+                            value={graph.expressions.line?.join(", ") || ""}
+                            onChange={() => {}}
+                            placeholder=""
+                            disabled={true}
+                          />
+                          <FloatingLabelInput
+                            label="Stacked Expressions (comma-separated)"
+                            value={graph.expressions.stacked?.join(", ") || ""}
+                            onChange={() => {}}
+                            placeholder=""
+                            disabled={true}
+                          />
+                          <FloatingLabelInput
+                            label="Bar Expressions (comma-separated)"
+                            value={graph.expressions.bar?.join(", ") || ""}
+                            onChange={() => {}}
+                            placeholder=""
+                            disabled={true}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Main Graphs Section */}
+            <section className="overview-card">
+              {graphsWithVerticals.length === 0 ? (
+                <div className="empty-graphs-message">
+                  <p>No graphs defined in this plan.</p>
+                </div>
+              ) : (
+                graphsWithVerticals.map((graphDef) => (
+                  <div key={graphDef.id} className="graph-content">
+                    <Chart
+                      graphDefinition={graphDef}
+                      snapshots={simulationSnapshots}
+                    />
+                  </div>
+                ))
+              )}
+            </section>
+          </div>
+
+          {/* Right Column: Financial Functions */}
+          <section className="blocks-section">
+            <div className="blocks-header">
+              <h2 className="blocks-title">Financial Functions</h2>
+            </div>
+            <div className="blocks-list">
+              {planData.blocks.map((block) => (
+                <Block
+                  key={block.id}
+                  state={block.state}
+                  onChange={() => {}}
+                  snapshots={simulationSnapshots}
+                  readOnly={true}
+                />
+              ))}
             </div>
           </section>
-
-          {/* Main Graphs Section */}
-          <section className="share-graphs-card">
-            {graphsWithVerticals.length === 0 ? (
-              <div className="empty-graphs-message">
-                <p>No graphs defined in this plan.</p>
-              </div>
-            ) : (
-              graphsWithVerticals.map((graphDef) => (
-                <div key={graphDef.id} className="graph-content">
-                  <Chart
-                    graphDefinition={graphDef}
-                    snapshots={simulationSnapshots}
-                  />
-                </div>
-              ))
-            )}
-          </section>
-
-          {/* Blocks Summary */}
-          {planData.blocks.length > 0 && (
-            <section className="share-blocks-card">
-              <h3 className="share-blocks-title">Financial Functions</h3>
-              <div className="share-blocks-list">
-                {planData.blocks.map((block) => (
-                  <div key={block.id} className="share-block-item">
-                    <div className="share-block-header">
-                      <span className="share-block-name">
-                        {block.state.title}
-                      </span>
-                      <span className="share-block-dates">
-                        {block.state.startDate} to {block.state.endDate}
-                      </span>
-                    </div>
-                    <div className="share-block-frequency">
-                      {block.state.frequency.charAt(0).toUpperCase() +
-                        block.state.frequency.slice(1)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
         </div>
       </main>
     </div>

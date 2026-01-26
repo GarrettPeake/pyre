@@ -24,9 +24,10 @@ interface BlockProps {
   onChange: (state: BlockState) => void;
   onDelete?: () => void;
   snapshots?: SimulationSnapshot[];
+  readOnly?: boolean;
 }
 
-function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
+function Block({ state, onChange, onDelete, snapshots, readOnly = false }: BlockProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isJsonMode, setIsJsonMode] = useState(false);
@@ -180,7 +181,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
         <div className="block-header-row">
           <div className="block-header-left">
             <span className="block-expand-icon">{isExpanded ? "▼" : "▶"}</span>
-            {isEditMode ? (
+            {isEditMode && !readOnly ? (
               <FloatingLabelInput
                 label="Title"
                 type="text"
@@ -196,6 +197,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
               type="date"
               value={state.startDate}
               onChange={(e) => handleStateChange("startDate", e.target.value)}
+              disabled={readOnly}
             />
 
             <FloatingLabelInput
@@ -203,28 +205,33 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
               type="date"
               value={state.endDate}
               onChange={(e) => handleStateChange("endDate", e.target.value)}
+              disabled={readOnly}
             />
           </div>
           <div className="block-header-right">
-            <button
-              className={`block-action-button ${isJsonMode ? "json-active" : ""}`}
-              onClick={toggleJsonMode}
-            >
-              JSON
-            </button>
+            {!readOnly && (
+              <button
+                className={`block-action-button ${isJsonMode ? "json-active" : ""}`}
+                onClick={toggleJsonMode}
+              >
+                JSON
+              </button>
+            )}
             <button
               className={`block-action-button ${isEditMode ? "save" : ""}`}
               onClick={toggleEditMode}
               disabled={isJsonMode}
             >
-              {isEditMode ? "Done" : "Edit"}
+              {readOnly ? (isEditMode ? "Hide Details" : "Show Details") : (isEditMode ? "Done" : "Edit")}
             </button>
-            <button
-              className="block-action-button delete"
-              onClick={handleDelete}
-            >
-              Delete
-            </button>
+            {!readOnly && (
+              <button
+                className="block-action-button delete"
+                onClick={handleDelete}
+              >
+                Delete
+              </button>
+            )}
           </div>
         </div>
 
@@ -239,6 +246,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
                     onChange={(e) =>
                       handleInputValueChange(name, e.target.value)
                     }
+                    disabled={readOnly}
                   />
                 </div>
               ))}
@@ -264,7 +272,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
             </div>
           )}
 
-          {isEditMode && !isJsonMode && (
+          {((isEditMode && !isJsonMode) || (readOnly && isEditMode)) && (
             <div className="block-edit-section">
               <div className="block-form-row">
                 <div className="block-form-inline-group">
@@ -274,6 +282,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
                     onChange={(e) =>
                       handleStateChange("frequency", e.target.value)
                     }
+                    disabled={readOnly}
                   >
                     <option value="daily">Daily</option>
                     <option value="monthly">Monthly</option>
@@ -289,6 +298,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
                       validateIdentifier(e.target.value) &&
                       handleStateChange("inputs", e.target.value)
                     }
+                    disabled={readOnly}
                   />
                 </div>
               </div>
@@ -299,6 +309,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
                   value={state.init}
                   onChange={(e) => handleStateChange("init", e.target.value)}
                   rows={9}
+                  disabled={readOnly}
                 />
               </div>
 
@@ -310,6 +321,7 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
                     handleStateChange("execution", e.target.value)
                   }
                   rows={9}
+                  disabled={readOnly}
                 />
               </div>
 
@@ -322,90 +334,93 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
                     handleStateChange("exports", e.target.value)
                   }
                   placeholder=""
+                  disabled={readOnly}
                 />
               </div>
 
-              <div className="block-debug-graphs-section">
-                <div className="block-debug-graphs-header">
-                  <span className="block-debug-graphs-title">Debug Graphs</span>
-                  <button
-                    className="block-add-graph-button"
-                    onClick={handleAddGraph}
-                    type="button"
-                  >
-                    + Add Graph
-                  </button>
-                </div>
-
-                {state.graphs.map((graph, index) => (
-                  <div key={graph.id} className="block-graph-config-card">
-                    <div className="block-graph-config-header">
-                      <FloatingLabelInput
-                        label="Title"
-                        value={graph.title}
-                        onChange={(e) =>
-                          handleUpdateGraph(index, "title", e.target.value)
-                        }
-                      />
-                      <FloatingLabelSelect
-                        label="Frequency"
-                        value={graph.frequency}
-                        onChange={(e) =>
-                          handleUpdateGraph(
-                            index,
-                            "frequency",
-                            e.target.value as "daily" | "monthly" | "yearly"
-                          )
-                        }
-                      >
-                        <option value="daily">Daily</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="yearly">Yearly</option>
-                      </FloatingLabelSelect>
-                      <button
-                        className="block-delete-graph-button"
-                        onClick={() => handleDeleteGraph(index)}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    </div>
-
-                    <div className="block-graph-expressions">
-                      <FloatingLabelInput
-                        label="Line Expressions (comma-separated)"
-                        value={graph.expressions.line?.join(", ") || ""}
-                        onChange={(e) =>
-                          handleUpdateGraphExpression(index, "line", e.target.value)
-                        }
-                        placeholder=""
-                      />
-                      <FloatingLabelInput
-                        label="Stacked Expressions (comma-separated)"
-                        value={graph.expressions.stacked?.join(", ") || ""}
-                        onChange={(e) =>
-                          handleUpdateGraphExpression(index, "stacked", e.target.value)
-                        }
-                        placeholder=""
-                      />
-                      <FloatingLabelInput
-                        label="Bar Expressions (comma-separated)"
-                        value={graph.expressions.bar?.join(", ") || ""}
-                        onChange={(e) =>
-                          handleUpdateGraphExpression(index, "bar", e.target.value)
-                        }
-                        placeholder=""
-                      />
-                    </div>
+              {!readOnly && (
+                <div className="block-debug-graphs-section">
+                  <div className="block-debug-graphs-header">
+                    <span className="block-debug-graphs-title">Debug Graphs</span>
+                    <button
+                      className="block-add-graph-button"
+                      onClick={handleAddGraph}
+                      type="button"
+                    >
+                      + Add Graph
+                    </button>
                   </div>
-                ))}
 
-                {state.graphs.length === 0 && (
-                  <p className="block-debug-graphs-hint">
-                    Add graphs to visualize variables while debugging your function
-                  </p>
-                )}
-              </div>
+                  {state.graphs.map((graph, index) => (
+                    <div key={graph.id} className="block-graph-config-card">
+                      <div className="block-graph-config-header">
+                        <FloatingLabelInput
+                          label="Title"
+                          value={graph.title}
+                          onChange={(e) =>
+                            handleUpdateGraph(index, "title", e.target.value)
+                          }
+                        />
+                        <FloatingLabelSelect
+                          label="Frequency"
+                          value={graph.frequency}
+                          onChange={(e) =>
+                            handleUpdateGraph(
+                              index,
+                              "frequency",
+                              e.target.value as "daily" | "monthly" | "yearly"
+                            )
+                          }
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="yearly">Yearly</option>
+                        </FloatingLabelSelect>
+                        <button
+                          className="block-delete-graph-button"
+                          onClick={() => handleDeleteGraph(index)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
+
+                      <div className="block-graph-expressions">
+                        <FloatingLabelInput
+                          label="Line Expressions (comma-separated)"
+                          value={graph.expressions.line?.join(", ") || ""}
+                          onChange={(e) =>
+                            handleUpdateGraphExpression(index, "line", e.target.value)
+                          }
+                          placeholder=""
+                        />
+                        <FloatingLabelInput
+                          label="Stacked Expressions (comma-separated)"
+                          value={graph.expressions.stacked?.join(", ") || ""}
+                          onChange={(e) =>
+                            handleUpdateGraphExpression(index, "stacked", e.target.value)
+                          }
+                          placeholder=""
+                        />
+                        <FloatingLabelInput
+                          label="Bar Expressions (comma-separated)"
+                          value={graph.expressions.bar?.join(", ") || ""}
+                          onChange={(e) =>
+                            handleUpdateGraphExpression(index, "bar", e.target.value)
+                          }
+                          placeholder=""
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  {state.graphs.length === 0 && (
+                    <p className="block-debug-graphs-hint">
+                      Add graphs to visualize variables while debugging your function
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
