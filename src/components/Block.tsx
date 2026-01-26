@@ -412,18 +412,17 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
             </div>
           )}
 
-          {!isEditMode &&
-            !isJsonMode &&
+          {!isJsonMode &&
             state.graphs &&
             state.graphs.length > 0 &&
             snapshots && (
-              <>
+              <div className="block-graphs-display">
                 {state.graphs.map((graph) => (
                   <div key={graph.id} className="block-section">
                     <Chart graphDefinition={graph} snapshots={snapshots} />
                   </div>
                 ))}
-              </>
+              </div>
             )}
         </div>
       )}
