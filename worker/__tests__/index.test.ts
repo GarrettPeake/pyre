@@ -4,7 +4,6 @@ import {
   expect,
   beforeEach,
   vi,
-  type MockInstance,
 } from "vitest";
 import worker from "../index";
 

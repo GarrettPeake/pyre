@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   runGlobalSimulation,
   type SimulationInput,
-  type SimulationSnapshot,
 } from "../SimulationEngine";
 import type { BlockState } from "../components/Block";
 
