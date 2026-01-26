@@ -456,22 +456,43 @@ This example showcases:
 
 ### Testing
 
-Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-workers`.
+Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-workers`. The project has comprehensive test coverage across the frontend simulation engine, math language utilities, and backend API.
 
 **Commands:**
 
-- `npm test` - Run all tests once
+- `npm test` - Run all tests once (124 tests across 3 test files)
 - `npm run test:watch` - Run tests in watch mode
 
 **Test Files:**
 
-- `src/__tests__/MathLangUtils.test.ts` - Tests for the math language security and evaluation:
-  - Basic math operations (addition, multiplication, decimals)
-  - Blocked keyword security (document, window, fetch, alert, eval, etc.)
-  - Word boundary matching (ensures variables like "documentation" aren't blocked)
-  - Dangerous character blocking (braces, brackets, quotes, backslash)
-  - Period validation (decimals allowed, property access blocked)
-  - executeCode function tests
+1. **`src/__tests__/MathLangUtils.test.ts`** (82 tests) - Tests for the math language security and evaluation:
+   - Basic math operations (addition, multiplication, decimals)
+   - Advanced math operations (division, modulo, exponentiation, parentheses)
+   - Negative numbers, very large/small numbers, scientific notation
+   - Blocked keyword security (document, window, fetch, alert, eval, localStorage, etc.)
+   - Word boundary matching (ensures variables like "documentation" aren't blocked)
+   - Dangerous character blocking (braces, brackets, quotes, backslash)
+   - Period validation (decimals allowed, property access blocked)
+   - Financial calculation patterns (simple interest, compound interest, loan payments)
+   - executeCode function tests (assignments, comments, blank lines, complex calculations)
+
+2. **`src/__tests__/SimulationEngine.test.ts`** (23 tests) - Tests for the simulation engine:
+   - Global initialization (snapshot generation, init code execution, empty/whitespace handling)
+   - Block initialization (init on start date, input parsing, non-numeric values)
+   - Block execution frequency (daily, monthly, yearly blocks)
+   - Block date range enforcement (blocks only execute within their date range)
+   - Variable exports (export to global context, multiple exports, preserving existing globals)
+   - Default inputs (total_periods, periods_from_start)
+   - Multiple blocks (execution order, cross-block data sharing via exports)
+   - Complex financial scenarios (savings accumulation, compound growth)
+   - Error handling (graceful handling of invalid code in init/execution)
+
+3. **`worker/__tests__/index.test.ts`** (19 tests) - Tests for the backend API:
+   - GET `/api/get_plan/:key` (missing key, plan not found, successful retrieval, CORS headers)
+   - POST `/api/save_plan/:key` (missing key, successful save, overwriting existing, large plans)
+   - Unknown routes (404 handling)
+   - Error handling (KV read/write errors, invalid JSON, CORS on errors)
+   - Integration scenarios (save-then-retrieve workflow, multiple independent plans)
 
 **Configuration:**
 
@@ -489,3 +510,4 @@ Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-w
 - **ALWAYS update CLAUDE.md after making changes to the codebase.** This includes documenting new features, security changes, architectural decisions, and any modifications to existing functionality. Keep updates focused and relevant.
 - Do not make up CSS variables, if you need to know what colors are available in the palette, you must read variables.css
 - You have access to src/types.ts please use it when following TypeScript best practices
+- **Ensure the build passes before marking tasks complete.** Test files must not have unused imports (TS6133 errors). Run `npm test` to verify tests pass.
