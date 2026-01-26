@@ -76,18 +76,12 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
     return /^[a-zA-Z_,]*$/.test(value);
   };
 
-  // Get block state for JSON editing (excludes graphs which are complex objects)
-  const getJsonEditableState = () => {
-    const { graphs, ...editableState } = state;
-    return editableState;
-  };
-
   // Toggle JSON mode - serialize current state to JSON when entering
   const toggleJsonMode = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!isJsonMode) {
-      // Entering JSON mode - serialize state
-      setJsonText(JSON.stringify(getJsonEditableState(), null, 2));
+      // Entering JSON mode - serialize full state including graphs
+      setJsonText(JSON.stringify(state, null, 2));
       setJsonError(null);
       if (!isExpanded) setIsExpanded(true);
     }
@@ -114,9 +108,12 @@ function Block({ state, onChange, onDelete, snapshots }: BlockProps) {
       if (typeof parsed.inputs !== "object" || parsed.inputs === null) {
         throw new Error("inputs must be an object");
       }
-      // Apply valid JSON, preserving graphs
+      if (!Array.isArray(parsed.graphs)) {
+        throw new Error("graphs must be an array");
+      }
+      // Apply valid JSON including graphs
       setJsonError(null);
-      onChange({ ...parsed, graphs: state.graphs });
+      onChange(parsed);
     } catch (err) {
       setJsonError(err instanceof Error ? err.message : "Invalid JSON");
     }
