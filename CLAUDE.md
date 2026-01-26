@@ -161,7 +161,8 @@ When users click "Start with examples" or "Start from scratch" on the splash pag
 
    **Performance Optimizations:**
 
-   - Graph definitions with vertical indicators are memoized using `useMemo` to prevent unnecessary object recreation (`src/pages/AppPage.tsx:303-324`)
+   - **Debounced Graph Rendering**: Graph definitions are debounced using `useDebouncedValue` hook (1-second delay) to prevent expensive Chart re-renders on every keystroke when editing graph expressions. Form inputs update immediately for responsiveness, but Charts only re-render 1 second after the last change.
+   - Graph definitions with vertical indicators are memoized using `useMemo` to prevent unnecessary object recreation
    - Charts only re-render when simulation snapshots change, not on every state update
    - Vertical indicators (current age, retirement age) are computed once and reused across all graphs
 
@@ -332,6 +333,26 @@ A streamlined collapsible card component for displaying and configuring financia
 
 - `Block` (default): The Block component
 - `BlockState` (type): Type definition for block configuration state
+
+### Hooks
+
+**useDebouncedValue Hook** (`src/hooks/useDebouncedValue.ts`)
+
+A custom hook that debounces a value, returning a version that only updates after a specified delay has passed since the last change.
+
+**Parameters:**
+
+- `value: T` - The value to debounce
+- `delay: number` - The debounce delay in milliseconds (default: 1000ms)
+
+**Returns:** The debounced value
+
+**Usage:**
+```typescript
+const debouncedGraphs = useDebouncedValue(graphs, 1000);
+```
+
+Used in AppPage to debounce graph definitions before passing them to Chart components, preventing expensive D3 re-renders on every keystroke when editing graph expressions.
 
 **SimulationEngine Module** (`src/SimulationEngine.ts`)
 
