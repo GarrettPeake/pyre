@@ -6,6 +6,8 @@ import FloatingLabelTextarea from "../components/FloatingLabelTextarea";
 import FloatingLabelSelect from "../components/FloatingLabelSelect";
 import Chart from "../components/Chart";
 import Modal from "../components/Modal";
+import BlockLibrary from "../components/BlockLibrary";
+import { type BlockTemplate } from "../blockTemplates";
 import {
   runGlobalSimulation,
   type SimulationSnapshot,
@@ -180,6 +182,7 @@ function AppPage() {
   >([]);
   const [isTutorialOpen, setIsTutorialOpen] = useState<boolean>(false);
   const [showHeaderSimulate, setShowHeaderSimulate] = useState<boolean>(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
   const simulateButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -382,6 +385,20 @@ function AppPage() {
     },
     []
   );
+
+  // Handle adding a block from the library
+  const handleAddFromLibrary = useCallback((template: BlockTemplate) => {
+    setBlocks((prev) => [
+      ...prev,
+      {
+        id: uuidv4(),
+        state: {
+          ...template.state,
+          graphs: [],
+        },
+      },
+    ]);
+  }, []);
 
   // Track visibility of original Simulate button
   useEffect(() => {
@@ -834,20 +851,30 @@ function AppPage() {
           <section className="blocks-section">
             <div className="blocks-header">
               <h2 className="blocks-title">Financial Functions</h2>
-              <button
-                className="add-block-button"
-                onClick={() =>
-                  setBlocks((prev) => [
-                    ...prev,
-                    {
-                      id: uuidv4(),
-                      state: EMPTY_BLOCK_STATE,
-                    },
-                  ])
-                }
-              >
-                +
-              </button>
+              <div className="blocks-header-buttons">
+                <button
+                  className="add-library-button"
+                  onClick={() => setIsLibraryOpen(true)}
+                  title="Add from library"
+                >
+                  Library
+                </button>
+                <button
+                  className="add-block-button"
+                  onClick={() =>
+                    setBlocks((prev) => [
+                      ...prev,
+                      {
+                        id: uuidv4(),
+                        state: EMPTY_BLOCK_STATE,
+                      },
+                    ])
+                  }
+                  title="Add blank block"
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div className="blocks-list">
               {blocks.map((block) => (
@@ -1007,6 +1034,13 @@ function AppPage() {
           </ul>
         </div>
       </Modal>
+
+      {isLibraryOpen && (
+        <BlockLibrary
+          onSelectTemplate={handleAddFromLibrary}
+          onClose={() => setIsLibraryOpen(false)}
+        />
+      )}
     </div>
   );
 }

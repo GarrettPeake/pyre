@@ -481,6 +481,29 @@
   margin: 0;
 }
 
+.blocks-header-buttons {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.add-library-button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  border: 1px solid var(--color-accent-orange);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-white);
+  color: var(--color-accent-orange);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-library-button:hover {
+  background-color: var(--color-accent-orange);
+  color: var(--color-white);
+  box-shadow: var(--shadow-sm);
+}
+
 .add-block-button {
   padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--font-size-base);
