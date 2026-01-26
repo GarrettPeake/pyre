@@ -510,3 +510,4 @@ Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-w
 - **ALWAYS update CLAUDE.md after making changes to the codebase.** This includes documenting new features, security changes, architectural decisions, and any modifications to existing functionality. Keep updates focused and relevant.
 - Do not make up CSS variables, if you need to know what colors are available in the palette, you must read variables.css
 - You have access to src/types.ts please use it when following TypeScript best practices
+- **Ensure the build passes before marking tasks complete.** Test files must not have unused imports (TS6133 errors). Run `npm test` to verify tests pass.
