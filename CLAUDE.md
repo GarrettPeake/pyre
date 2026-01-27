@@ -95,14 +95,38 @@ This project uses Cloudflare workers to serve both the front and backend. The ba
 
 The backend is intentionally simple - all computational logic runs on the frontend. The backend worker serves the following purposes:
 
-1. **`/api/get_plan/<key>`** - Retrieves saved financial plans from Cloudflare KV storage
-2. **`/api/save_plan/<key>`** - Saves financial plans to Cloudflare KV storage
-3. **`/api/create_share/<planId>`** - Creates a read-only share link for an existing plan (returns `{ shareId }`)
-4. **`/api/get_share/<shareId>`** - Retrieves plan data via a share link (read-only access)
+### Plan Management Endpoints
+1. **`GET /api/get_plan/<key>`** - Retrieves saved financial plans from Cloudflare KV storage. Protected plans require authentication via `Authorization: Bearer <token>` header.
+2. **`POST /api/save_plan/<key>`** - Saves financial plans to Cloudflare KV storage. Protected plans require authentication from the owner.
+3. **`POST /api/create_share/<planId>`** - Creates a read-only share link for an existing plan (returns `{ shareId }`). Protected plans require owner authentication.
+4. **`GET /api/get_share/<shareId>`** - Retrieves plan data via a share link (read-only access, bypasses auth)
 
-Share links are stored in KV as `share:{shareId} -> planId` mappings, allowing multiple share links per plan and ensuring updates to the original plan are reflected in all share links.
+### Authentication Endpoints
+5. **`POST /api/auth/login`** - Combined login/signup endpoint. If username exists, verifies password. If username doesn't exist, creates account with a default first plan (matching the anonymous plan defaults via `createDefaultPlan()`). Returns JWT token.
+6. **`GET /api/auth/me`** - Returns current user info (username, planIds) if authenticated
+7. **`POST /api/auth/logout`** - Placeholder for future token blocklist functionality
 
-All calculations, block execution, and financial modeling happen client-side. The backend is purely a persistence layer using Cloudflare's KV store with the `FINANCIAL_PLANS` binding.
+### Plan Operations Endpoints
+8. **`GET /api/plans`** - Returns plan summaries for authenticated user (id, simulationName, lastModified)
+9. **`POST /api/plans/create`** - Creates a new plan for authenticated user using `createDefaultPlan()` (same defaults as anonymous plans), adds to their planIds
+10. **`POST /api/plans/link`** - Links an anonymous plan to authenticated user's account (clones to new protected plan)
+11. **`DELETE /api/plans/:planId`** - Deletes a protected plan (owner authentication required)
+
+### Data Storage Schema
+- Plans: `{planId}` → SavedPlanData (with optional `owner` field for protected plans)
+- Share links: `share:{shareId}` → planId
+- Users: `user:{username}` → UserRecord (username, passwordHash, salt, createdAt, planIds)
+
+### Authentication
+- **JWT tokens**: HMAC-SHA256 signed using `JWT_SECRET` environment variable
+- 30-day token expiration
+- Stateless verification (no KV read required)
+- Passwords hashed with PBKDF2 (100,000 iterations, SHA-256)
+
+### Default Plan Helper
+The `createDefaultPlan(owner)` function in `worker/index.ts` generates a fully-configured default plan matching the anonymous plan defaults in `src/pages/AppPage.tsx`. This ensures consistent initial plans whether created via signup, the dashboard "New Simulation" button, or anonymous access. The default plan includes the "My Retirement Plan" simulation with a home loan block, Net Worth graph, and Mortgage graph.
+
+All calculations, block execution, and financial modeling happen client-side. The backend is purely a persistence layer using Cloudflare's KV store with the `FINANCIAL_PLANS` binding and `JWT_SECRET` for authentication.
 
 ## Frontend Architecture
 
@@ -110,24 +134,34 @@ The frontend uses React with React Router for navigation. The application has tw
 
 ### Routing Structure
 
-- **`/`** - Splash page (landing page)
+- **`/`** - Splash page (landing page with login/signup form)
+- **`/dashboard`** - Dashboard page for authenticated users to manage their plans
 - **`/app/:planId`** - Main application page with a unique plan ID
 - **`/share/:shareId`** - Read-only view of a shared plan
 
-When users click "Start with examples" or "Start from scratch" on the splash page, a new UUID is generated and they are navigated to `/app/<uuid>`. This UUID serves as the unique identifier for their financial plan and will be used for saving/loading plans via the backend API.
+**Authentication Flow:**
+1. **Anonymous users** can click "Start without account" to create an anonymous plan at `/app/<uuid>`
+2. **New accounts** are created by entering username + password on the splash page. A first plan is auto-created and the user navigates to it.
+3. **Returning users** log in via the splash page and are redirected to `/dashboard`
+4. **Protected plans** require authentication - unauthenticated access redirects to `/` with a return URL
 
 Users can create read-only share links from their plan using the Share button, which generates a unique share URL. Recipients of share links can view the simulation and graphs but cannot modify the plan.
 
 ### Pages
 
-1. **Splash Page** (`src/Splash.tsx`)
+1. **Splash Page** (`src/pages/Splash.tsx`)
 
    - Landing page with modern, finance-focused design
    - Features the PYRE logo (orange with drop shadow) and tagline "Plan Your Retirement Easily"
-   - Shows app preview placeholder (currently vite.svg, will be replaced with app screenshot)
-   - Displays feature highlights: "Free, Ad Free, Open Source, No Login, No Tracking"
-   - Two CTA buttons: "Start with examples" and "Start from scratch"
-   - Links to GitHub and Ko-Fi (placeholders for now)
+   - **Login/Signup Form**: Combined authentication form with username and password fields
+     - Single "Sign In / Create Account" button handles both flows
+     - New users get an account created + first plan generated automatically
+     - Existing users are redirected to `/dashboard`
+     - Supports `?return=` URL parameter for post-login redirect
+   - "Start without account" button creates anonymous plan (preserves original flow)
+   - Displays feature highlights: "Free, Ad Free, Open Source, No Tracking"
+   - Links to GitHub and Ko-Fi
+   - Redirects to dashboard if user is already authenticated
 
 2. **App Page** (`src/AppPage.tsx`)
 
@@ -146,11 +180,23 @@ Users can create read-only share links from their plan using the Share button, w
 
    - On page load, fetches plan data from backend using the planId via `/api/get_plan/<planId>`
    - If no saved plan exists, uses default example block configuration with simulationName "My Retirement Plan"
+   - **Auth handling**: Protected plans return 401/403 if user is not authenticated or not the owner
+     - 401: Redirects to `/` with `?return=/app/{planId}` for login
+     - 403: Shows alert and redirects to `/dashboard`
    - Automatically saves plan data (simulationName, currentAge, retirementAge, globalInit, graphs, blocks) on changes with 1-second debounce
    - Save status indicator (checkmark icon) next to planId in header:
      - Green when data is saved
      - Grey when unsaved changes exist
-   - SavedPlanData includes: simulationName, currentAge, retirementAge, globalInit, graphs, blocks[]
+   - SavedPlanData includes: simulationName, currentAge, retirementAge, globalInit, graphs, blocks[], owner?
+
+   **Authentication Features:**
+
+   - **Header auth section** (right side): Shows user link to dashboard + logout button when authenticated, or "Sign In" link when not
+   - **Plan protection indicator**: Shows "Protected by account" instead of "Bookmark your secret link!" for protected plans
+   - **Link to Account button**: Shown for anonymous plans, allows linking plan to user's account
+     - If signed in: Clones plan to new protected URL immediately
+     - If not signed in: Opens modal with login/signup form, then clones plan
+   - All API requests include `Authorization: Bearer <token>` header when authenticated
 
    **Share Links:**
 
@@ -229,6 +275,19 @@ Users can create read-only share links from their plan using the Share button, w
    - Imports AppPage.css for layout consistency, with share-specific styles in SharePage.css
    - Uses the same Chart, Block, FloatingLabelInput, FloatingLabelTextarea, and FloatingLabelSelect components as AppPage
    - No save functionality, no Share/Export/Import buttons, no Simulate button
+
+4. **Dashboard Page** (`src/pages/Dashboard.tsx`)
+
+   - Protected page for authenticated users to manage their plans
+   - Redirects to `/` if user is not authenticated
+   - **Header**: PYRE logo (links to home), welcome message with username, logout button
+   - **Plan Grid**: Displays all user's plans as cards with:
+     - Plan name (links to `/app/:planId`)
+     - Last modified date
+     - Delete button (with confirmation dialog)
+   - **Create Plan**: "+ New Simulation" button creates a new protected plan and navigates to it
+   - **Empty State**: Shows message and "Create Your First Simulation" button when no plans exist
+   - Fetches plan summaries via `GET /api/plans`
 
 ### Components
 
@@ -470,6 +529,30 @@ A data module containing prebuilt financial block templates. Each template is a 
 | Expenses | Monthly Expenses | Living costs with inflation |
 | Expenses | Emergency Fund | Savings with target amount |
 | Expenses | Healthcare Costs | Medical expenses with above-inflation growth |
+
+### Contexts
+
+**AuthContext** (`src/contexts/AuthContext.tsx`)
+
+Provides authentication state and functions to the entire application. Wraps the app in `App.tsx`.
+
+**State:**
+
+- `user`: Current user object `{ username: string, planIds: string[] }` or null
+- `token`: JWT token string or null
+- `isLoading`: Boolean indicating initial auth check in progress
+
+**Functions:**
+
+- `login(username, password)`: Combined login/signup. Returns `{ success, error?, isNewUser?, planIds? }`
+- `logout()`: Clears token from localStorage and resets state
+- `refreshUser()`: Re-fetches user data from `/api/auth/me`
+
+**Behavior:**
+
+- On mount, checks localStorage for existing token (`pyre_auth_token`)
+- Validates token with `/api/auth/me` endpoint
+- Invalid tokens are automatically cleared
 
 ### Hooks
 
