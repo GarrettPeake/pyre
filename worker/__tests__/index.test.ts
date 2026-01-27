@@ -49,6 +49,7 @@ function createRequest(
 function createMockEnv(kv = createMockKV()) {
   return {
     FINANCIAL_PLANS: kv as unknown as KVNamespace,
+    JWT_SECRET: "test-jwt-secret-key-for-testing-only",
   };
 }
 
@@ -177,10 +178,12 @@ describe("Worker API", () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body).toEqual({ success: true });
-      expect(mockKV.put).toHaveBeenCalledWith(
-        "my-plan-id",
-        JSON.stringify(planData)
-      );
+      // Verify put was called and check saved data includes our values plus lastModified
+      expect(mockKV.put).toHaveBeenCalled();
+      const savedData = JSON.parse(mockKV._store.get("my-plan-id")!);
+      expect(savedData.simulationName).toBe("My Retirement Plan");
+      expect(savedData.currentAge).toBe(25);
+      expect(savedData.lastModified).toBeDefined();
     });
 
     it("should include CORS headers on save response", async () => {
@@ -214,10 +217,12 @@ describe("Worker API", () => {
       const response = await worker.fetch(request, env, mockContext);
 
       expect(response.status).toBe(200);
-      expect(mockKV.put).toHaveBeenCalledWith(
-        "existing-plan",
-        JSON.stringify(updatedPlan)
-      );
+      // Verify put was called with the key and check the saved data includes our updates
+      expect(mockKV.put).toHaveBeenCalled();
+      const savedData = JSON.parse(mockKV._store.get("existing-plan")!);
+      expect(savedData.name).toBe("Updated");
+      expect(savedData.newField).toBe(true);
+      expect(savedData.lastModified).toBeDefined();
     });
 
     it("should handle large plan data", async () => {
@@ -502,8 +507,10 @@ describe("Worker API", () => {
       const getResponse = await worker.fetch(getRequest, env, mockContext);
       expect(getResponse.status).toBe(200);
 
-      const retrievedPlan = await getResponse.json();
-      expect(retrievedPlan).toEqual(planData);
+      const retrievedPlan = await getResponse.json() as Record<string, unknown>;
+      // Use toMatchObject to ignore lastModified field added by save
+      expect(retrievedPlan).toMatchObject(planData);
+      expect(retrievedPlan.lastModified).toBeDefined();
     });
 
     it("should handle multiple plans independently", async () => {
@@ -542,8 +549,9 @@ describe("Worker API", () => {
         mockContext
       );
 
-      expect(await response1.json()).toEqual(plan1);
-      expect(await response2.json()).toEqual(plan2);
+      // Use toMatchObject to ignore lastModified field added by save
+      expect(await response1.json()).toMatchObject(plan1);
+      expect(await response2.json()).toMatchObject(plan2);
     });
 
     it("should support create share then retrieve via share link workflow", async () => {
@@ -592,7 +600,8 @@ describe("Worker API", () => {
       expect(getShareResponse.status).toBe(200);
 
       const retrievedPlan = await getShareResponse.json();
-      expect(retrievedPlan).toEqual(planData);
+      // Use toMatchObject to ignore lastModified field added by save
+      expect(retrievedPlan).toMatchObject(planData);
     });
 
     it("should allow multiple share links for the same plan", async () => {

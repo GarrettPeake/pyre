@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Block, { type BlockState } from "../components/Block";
 import FloatingLabelInput from "../components/FloatingLabelInput";
@@ -13,6 +13,7 @@ import {
   type SimulationSnapshot,
 } from "../SimulationEngine";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useAuth } from "../contexts/AuthContext";
 import "./AppPage.css";
 import { v4 as uuidv4 } from "uuid";
 import { type GraphDefinition } from "../types";
@@ -32,39 +33,65 @@ interface SavedPlanData {
     id: string;
     state: BlockState;
   }>;
+  owner?: string;
 }
 
 // API Functions
-async function fetchPlan(planId: string): Promise<SavedPlanData | null> {
+interface FetchPlanResult {
+  data: SavedPlanData | null;
+  status: number;
+}
+
+async function fetchPlan(planId: string, token: string | null): Promise<FetchPlanResult> {
   try {
-    const response = await fetch(`/api/get_plan/${planId}`);
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`/api/get_plan/${planId}`, { headers });
+
     if (response.status === 404) {
       return {
-        simulationName: "My Retirement Plan",
-        currentAge: 30,
-        retirementAge: 62,
-        globalInit: DEFAULT_GLOBAL_INIT,
-        graphs: DEFAULT_GRAPHS,
-        blocks: DEFAULT_BLOCKS,
+        status: 404,
+        data: {
+          simulationName: "My Retirement Plan",
+          currentAge: 30,
+          retirementAge: 62,
+          globalInit: DEFAULT_GLOBAL_INIT,
+          graphs: DEFAULT_GRAPHS,
+          blocks: DEFAULT_BLOCKS,
+        },
       };
     }
+
+    if (response.status === 401 || response.status === 403) {
+      return { status: response.status, data: null };
+    }
+
     if (!response.ok) {
       throw new Error("Failed to fetch plan");
     }
-    return await response.json();
+
+    return { status: 200, data: await response.json() };
   } catch (error) {
     console.error("Error fetching plan:", error);
-    return null;
+    return { status: 500, data: null };
   }
 }
 
-async function savePlan(planId: string, data: SavedPlanData): Promise<boolean> {
+async function savePlan(planId: string, data: SavedPlanData, token: string | null): Promise<boolean> {
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const response = await fetch(`/api/save_plan/${planId}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(data),
     });
     if (!response.ok) {
@@ -166,6 +193,9 @@ const EMPTY_BLOCK_STATE: BlockState = {
 
 function AppPage() {
   const { planId } = useParams<{ planId: string }>();
+  const navigate = useNavigate();
+  const { user, token, isLoading: isAuthLoading, login, logout } = useAuth();
+
   const [simulationName, setSimulationName] =
     useState<string>("My Retirement Plan");
   const [currentAge, setCurrentAge] = useState<number>(25);
@@ -173,6 +203,7 @@ function AppPage() {
   const [globalInit, setGlobalInit] = useState<string>(DEFAULT_GLOBAL_INIT);
   const [graphs, setGraphs] = useState<GraphDefinition[]>(DEFAULT_GRAPHS);
   const [blocks, setBlocks] = useState<BlockData[]>([]);
+  const [planOwner, setPlanOwner] = useState<string | undefined>(undefined);
   const [isSaved, setIsSaved] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEditingSetup, setIsEditingSetup] = useState<boolean>(false);
@@ -185,25 +216,48 @@ function AppPage() {
   const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [isCreatingShare, setIsCreatingShare] = useState<boolean>(false);
+  const [showLinkModal, setShowLinkModal] = useState<boolean>(false);
+  const [linkUsername, setLinkUsername] = useState<string>("");
+  const [linkPassword, setLinkPassword] = useState<string>("");
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [isLinking, setIsLinking] = useState<boolean>(false);
   const simulateButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isAnonymousPlan = !planOwner;
+
   // Load plan data from backend on mount
   useEffect(() => {
-    if (!planId) {
-      setIsLoading(false);
+    if (!planId || isAuthLoading) {
+      if (!isAuthLoading && !planId) {
+        setIsLoading(false);
+      }
       return;
     }
 
-    fetchPlan(planId).then((data) => {
-      if (data) {
-        setSimulationName(data.simulationName);
-        setCurrentAge(data.currentAge);
-        setRetirementAge(data.retirementAge);
-        setGlobalInit(data.globalInit);
-        setGraphs(data.graphs);
+    fetchPlan(planId, token).then((result) => {
+      if (result.status === 401) {
+        // Redirect to login with return URL
+        navigate(`/?return=/app/${planId}`);
+        return;
+      }
+
+      if (result.status === 403) {
+        // User doesn't own this plan
+        alert("You don't have access to this plan.");
+        navigate("/dashboard");
+        return;
+      }
+
+      if (result.data) {
+        setSimulationName(result.data.simulationName);
+        setCurrentAge(result.data.currentAge);
+        setRetirementAge(result.data.retirementAge);
+        setGlobalInit(result.data.globalInit);
+        setGraphs(result.data.graphs);
+        setPlanOwner(result.data.owner);
         setBlocks(
-          data.blocks.map((block) => ({
+          result.data.blocks.map((block) => ({
             id: block.id,
             state: block.state,
           }))
@@ -211,7 +265,7 @@ function AppPage() {
       }
       setIsLoading(false);
     });
-  }, [planId]);
+  }, [planId, token, isAuthLoading, navigate]);
 
   // Save plan to backend
   const saveToBackend = useCallback(
@@ -228,14 +282,15 @@ function AppPage() {
           id: block.id,
           state: block.state,
         })),
+        owner: planOwner,
       };
 
-      const success = await savePlan(planId, planData);
+      const success = await savePlan(planId, planData, token);
       if (success) {
         setIsSaved(true);
       }
     },
-    [planId, simulationName, currentAge, retirementAge, globalInit, graphs]
+    [planId, simulationName, currentAge, retirementAge, globalInit, graphs, planOwner, token]
   );
 
   // Handle block state changes - update state immediately
@@ -408,8 +463,14 @@ function AppPage() {
 
     setIsCreatingShare(true);
     try {
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`/api/create_share/${planId}`, {
         method: "POST",
+        headers,
       });
 
       if (!response.ok) {
@@ -428,7 +489,99 @@ function AppPage() {
     } finally {
       setIsCreatingShare(false);
     }
-  }, [planId]);
+  }, [planId, token]);
+
+  // Link plan to account
+  const handleLinkToAccount = useCallback(async () => {
+    if (!planId) return;
+
+    // If already signed in, just link directly
+    if (user && token) {
+      setIsLinking(true);
+      try {
+        const response = await fetch("/api/plans/link", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ sourcePlanId: planId }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Failed to link plan");
+        }
+
+        const data = await response.json();
+        navigate(`/app/${data.newPlanId}`);
+      } catch (error) {
+        console.error("Error linking plan:", error);
+        alert(error instanceof Error ? error.message : "Failed to link plan");
+      } finally {
+        setIsLinking(false);
+      }
+      return;
+    }
+
+    // Show modal to sign in/create account
+    setShowLinkModal(true);
+  }, [planId, user, token, navigate]);
+
+  // Handle link modal form submission
+  const handleLinkModalSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!planId) return;
+
+    setLinkError(null);
+    setIsLinking(true);
+
+    try {
+      // First login/signup
+      const loginResult = await login(linkUsername, linkPassword);
+      if (!loginResult.success) {
+        setLinkError(loginResult.error || "Authentication failed");
+        return;
+      }
+
+      // Get the new token from localStorage
+      const newToken = localStorage.getItem("pyre_auth_token");
+      if (!newToken) {
+        setLinkError("Failed to get authentication token");
+        return;
+      }
+
+      // Link the plan
+      const response = await fetch("/api/plans/link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${newToken}`,
+        },
+        body: JSON.stringify({ sourcePlanId: planId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to link plan");
+      }
+
+      const data = await response.json();
+      setShowLinkModal(false);
+      navigate(`/app/${data.newPlanId}`);
+    } catch (error) {
+      console.error("Error linking plan:", error);
+      setLinkError(error instanceof Error ? error.message : "Failed to link plan");
+    } finally {
+      setIsLinking(false);
+    }
+  }, [planId, linkUsername, linkPassword, login, navigate]);
+
+  // Handle logout
+  const handleLogout = useCallback(async () => {
+    await logout();
+    navigate("/");
+  }, [logout, navigate]);
 
   // Track visibility of original Simulate button
   useEffect(() => {
@@ -530,9 +683,23 @@ function AppPage() {
                 />
               </svg>
             </div>
-            <p className="header-link">Bookmark your secret link!</p>
+            {isAnonymousPlan ? (
+              <p className="header-link">Bookmark your secret link!</p>
+            ) : (
+              <p className="header-link protected-badge">Protected by account</p>
+            )}
           </div>
           <div className="export-import-buttons">
+            {isAnonymousPlan && (
+              <button
+                className="link-account-button"
+                onClick={handleLinkToAccount}
+                disabled={isLinking}
+                title="Link this plan to your account"
+              >
+                {isLinking ? "Linking..." : "Link to Account"}
+              </button>
+            )}
             <button
               className="share-button"
               onClick={handleCreateShareLink}
@@ -623,31 +790,47 @@ function AppPage() {
               )}
             </button>
           )}
-          <div className="hero-links">
-            <a
-              href="https://github.com/GarrettPeake/PYRE"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="github-link"
-            >
-              <img
-                src="/github-mark.svg"
-                className="github-logo"
-                alt="GitHub Logo linking to project repo"
-              />
-            </a>
-            <a
-              href="https://ko-fi.com/garrettpeake"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="kofi-link"
-            >
-              <img
-                src="/kofi.png"
-                alt="Support me on Ko-fi"
-                className="kofi-logo"
-              />
-            </a>
+          <div className="header-right-section">
+            {user ? (
+              <div className="user-section">
+                <Link to="/dashboard" className="user-dashboard-link">
+                  {user.username}
+                </Link>
+                <button className="logout-button" onClick={handleLogout}>
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <Link to="/" className="login-link">
+                Sign In
+              </Link>
+            )}
+            <div className="hero-links">
+              <a
+                href="https://github.com/GarrettPeake/PYRE"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="github-link"
+              >
+                <img
+                  src="/github-mark.svg"
+                  className="github-logo"
+                  alt="GitHub Logo linking to project repo"
+                />
+              </a>
+              <a
+                href="https://ko-fi.com/garrettpeake"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="kofi-link"
+              >
+                <img
+                  src="/kofi.png"
+                  alt="Support me on Ko-fi"
+                  className="kofi-logo"
+                />
+              </a>
+            </div>
           </div>
         </div>
       </header>
@@ -1122,6 +1305,65 @@ function AppPage() {
               Copy
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showLinkModal}
+        onClose={() => {
+          setShowLinkModal(false);
+          setLinkError(null);
+          setLinkUsername("");
+          setLinkPassword("");
+        }}
+        title="Link to Your Account"
+      >
+        <div className="link-modal-content">
+          <p>
+            Sign in or create an account to protect this simulation. A copy will
+            be created and linked to your account.
+          </p>
+          <form onSubmit={handleLinkModalSubmit} className="link-modal-form">
+            <input
+              type="text"
+              className="link-modal-input"
+              placeholder="Username"
+              value={linkUsername}
+              onChange={(e) => setLinkUsername(e.target.value)}
+              disabled={isLinking}
+              autoComplete="username"
+            />
+            <input
+              type="password"
+              className="link-modal-input"
+              placeholder="Password"
+              value={linkPassword}
+              onChange={(e) => setLinkPassword(e.target.value)}
+              disabled={isLinking}
+              autoComplete="current-password"
+            />
+            {linkError && <p className="link-modal-error">{linkError}</p>}
+            <div className="link-modal-buttons">
+              <button
+                type="button"
+                className="link-modal-cancel"
+                onClick={() => {
+                  setShowLinkModal(false);
+                  setLinkError(null);
+                }}
+                disabled={isLinking}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="link-modal-submit"
+                disabled={isLinking || !linkUsername || !linkPassword}
+              >
+                {isLinking ? "Linking..." : "Sign In & Link"}
+              </button>
+            </div>
+          </form>
         </div>
       </Modal>
     </div>
