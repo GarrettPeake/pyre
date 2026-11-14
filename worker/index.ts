@@ -238,6 +238,13 @@ function createDefaultPlan(owner: string): SavedPlanData {
   };
 }
 
+// Plan ids are UUIDs. Anything else (user:<name>, share:<id>) is another kind of KV
+// record and must never be read or written as a plan.
+const PLAN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isPlanId(id: unknown): id is string {
+  return typeof id === "string" && PLAN_ID.test(id);
+}
+
 // Generate a UUID v4 (for share links)
 function generateUUID(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
@@ -436,7 +443,7 @@ export default {
         const body = (await request.json()) as { sourcePlanId?: string };
         const { sourcePlanId } = body;
 
-        if (!sourcePlanId) {
+        if (!isPlanId(sourcePlanId)) {
           return jsonResponse({ error: "sourcePlanId required" }, 400);
         }
 
@@ -477,7 +484,7 @@ export default {
       // DELETE /api/plans/:planId - Delete a plan
       if (route.startsWith("/api/plans/") && request.method === "DELETE") {
         const planId = route.replace("/api/plans/", "");
-        if (!planId || planId === "create" || planId === "link") {
+        if (!isPlanId(planId)) {
           return jsonResponse({ error: "Invalid plan ID" }, 400);
         }
 
@@ -516,7 +523,7 @@ export default {
       if (route.startsWith("/api/create_share/")) {
         const planId = route.replace("/api/create_share/", "");
 
-        if (!planId) {
+        if (!isPlanId(planId)) {
           return jsonResponse({ error: "No plan ID provided" }, 400);
         }
 
@@ -547,7 +554,7 @@ export default {
       if (route.startsWith("/api/get_share/")) {
         const shareId = route.replace("/api/get_share/", "");
 
-        if (!shareId) {
+        if (!isPlanId(shareId)) {
           return jsonResponse({ error: "No share ID provided" }, 400);
         }
 
@@ -570,7 +577,7 @@ export default {
         // Extract the key from the route path
         const key = route.replace("/api/get_plan/", "");
 
-        if (!key) {
+        if (!isPlanId(key)) {
           return jsonResponse({ error: "No key provided" }, 400);
         }
 
@@ -597,7 +604,7 @@ export default {
         // Extract the key from the route path
         const key = route.replace("/api/save_plan/", "");
 
-        if (!key) {
+        if (!isPlanId(key)) {
           return jsonResponse({ error: "No key provided" }, 400);
         }
 
