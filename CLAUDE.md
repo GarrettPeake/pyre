@@ -721,7 +721,7 @@ Tests run in Node: the worker against an in-memory KV and SQLite standing in for
 
 **Local dev:** `npm run dev` (Vite). Put `APP_ORIGIN` (the dev server's origin), `BETTER_AUTH_SECRET`, and a local GAuth's `GAUTH_ORIGIN`/`GAUTH_CERTS` in `.dev.vars` (gitignored), and run `npx wrangler d1 migrations apply pyre --local` once.
 
-**Deploy:** `npx wrangler d1 migrations apply pyre --remote` (when `migrations/` changes), then `npm run deploy`.
+**Deploy:** pushing to `main` deploys (Cloudflare Workers Builds builds and deploys every push). Builds don't apply D1 migrations: run `npx wrangler d1 migrations apply pyre --remote` before pushing code that needs a new one. `npm run deploy` deploys by hand.
 
 # Rules
 
