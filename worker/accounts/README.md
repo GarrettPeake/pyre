@@ -1,9 +1,13 @@
 # Accounts for secret-link apps
 
-Decklister's account system. It is copied as is into other apps whose data lives behind
-a secret link: Pyre has the same files at `worker/accounts/` and `src/accounts/`. Change
-them in one app, copy them to the other. It has two halves, and neither contains
-anything app-specific:
+Decklister's account system. It is copied as is into other apps:
+
+- Pyre (data behind secret links, like Decklister): `worker/accounts/` and `src/accounts/`.
+- Calendizer (everything behind a sign-in, invite-only registration): `api/src/accounts/`
+  and `web/src/accounts/`.
+
+Change the files in one app, then copy them to the others. The module has two halves,
+and neither contains anything app-specific:
 
 | | |
 |---|---|
@@ -14,7 +18,9 @@ anything app-specific:
 
 - **Use a link without an account.** The link (e.g. `/<uuid>`) is the secret: whoever
   holds it can read and write it.
-- **Register with a username and password**, or **sign in** with one.
+- **Register with a username and password**, or **sign in** with one. An app can make
+  registering need an invite code (`signUp: { inviteCode }`, sent as `invite`), or
+  close it (`signUp: {}`).
 - **Protect a link** with an account, either a new one or an existing one. The first
   account to claim a link keeps it. From then on the link opens only in that
   account's session (401 without a session, 403 in someone else's). One account can
@@ -54,7 +60,7 @@ person's first GAuth sign-in is one of two things:
 
 | | |
 |---|---|
-| `/api/auth/*` | Better Auth: `sign-in/username`, `sign-up/email` (send `username`, `password`), `sign-in/discover`, `sign-out`, SAML. |
+| `/api/auth/*` | Better Auth: `sign-in/username`, `sign-up/email` (send `username`, `password`, and `invite` where needed: 403 `INVALID_INVITE` or `SIGN_UP_CLOSED`), `sign-in/discover`, `sign-out`, SAML. |
 | `GET /api/account` | `{ signedIn, user: { name, username, method }, links: [{ id, path, label, protectedAt }] }` |
 | `POST /api/account/links {id}` | Protect a link with the signed-in account (409 if another account has it). |
 | `GET /auth/gauth?next=` | Off to GAuth and back to `next`. After 3 tries in a minute, or if GAuth refuses, it comes back as `next?auth_error=<code>` instead. |
@@ -76,7 +82,8 @@ person's first GAuth sign-in is one of two things:
    ```js
    const accounts = createAccounts({ db: env.DB, appOrigin: env.APP_ORIGIN, secret: env.BETTER_AUTH_SECRET,
      gauthOrigin: env.GAUTH_ORIGIN, gauthCerts: env.GAUTH_CERTS,
-     isLinkId, linkPath: (id) => `/app/${id}`, describeLink: async (id) => /* a name */ null });
+     isLinkId, linkPath: (id) => `/app/${id}`, describeLink: async (id) => /* a name */ null,
+     /* optional: */ signUp: { inviteCode: env.INVITE_CODE } });
    // first: redirect other hosts to APP_ORIGIN, then
    const refused = accounts.crossOriginPost(request); if (refused) return refused;
    const res = await accounts.route(request); if (res) return res;
@@ -97,7 +104,9 @@ person's first GAuth sign-in is one of two things:
      - once signed in, call `takePendingProtect(id)` and then `protect(id)` (this
        finishes a protect that went through GAuth).
    - Decklister's `public/js/auth.js` is the worked example; Pyre's `src/contexts/AuthContext.tsx`
-     and `src/pages/AppPage.tsx` are the React one.
+     and `src/pages/AppPage.tsx` are the React one. Calendizer (no links; a sign-in page
+     of its own) is `web/src/App.tsx` and `web/src/Login.tsx`: `register(username,
+     password, { invite })`.
    - Theme it with `--acct-*` properties on `:root` (see the top of `accounts.css`).
 6. Register the app in GAuth (Admin → Service providers → Add):
    - Entity ID: `<APP_ORIGIN>/api/auth/sso/saml2/sp/metadata?providerId=gauth`

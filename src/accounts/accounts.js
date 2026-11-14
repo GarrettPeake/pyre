@@ -92,12 +92,15 @@ export async function signInWithPassword(username, password) {
     return { ok: true };
 }
 
-/** A new password account, signed in. Throws with a message for people. */
-export async function register(username, password) {
+/**
+ * A new password account, signed in. Throws with a message for people. `extra` is
+ * anything else the app's sign-up asks for: `{ invite }` where it needs an invite code.
+ */
+export async function register(username, password, extra = {}) {
     // The server makes the email (a stand-in) and the name; these are only what it needs.
     const result = await call('/api/auth/sign-up/email', {
         method: 'POST',
-        body: { username, password, email: '', name: '' },
+        body: { ...extra, username, password, email: '', name: '' },
     });
     if (!result.ok) {
         const code = result.data && result.data.code;

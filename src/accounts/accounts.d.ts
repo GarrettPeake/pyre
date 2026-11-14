@@ -1,4 +1,4 @@
-// Types for ./accounts.js, for apps written in TypeScript (Pyre).
+// Types for ./accounts.js, for apps written in TypeScript (Pyre, Calendizer).
 
 export interface AccountUser {
     name: string;
@@ -20,7 +20,7 @@ export const AUTH_ERRORS: Record<string, string>;
 export function me(): Promise<Me>;
 export function discover(identifier: string): Promise<'gauth' | 'password'>;
 export function signInWithPassword(username: string, password: string): Promise<{ ok: true; gauth?: undefined } | { gauth: true; ok?: undefined }>;
-export function register(username: string, password: string): Promise<{ ok: true }>;
+export function register(username: string, password: string, extra?: { invite?: string }): Promise<{ ok: true }>;
 export function signInWithGAuth(next?: string, options?: { retry?: boolean }): void;
 export function signOut(): Promise<void>;
 

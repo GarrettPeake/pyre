@@ -4,7 +4,8 @@
  * libraries).
  *
  * Two kinds of account, never both on one user (GAuth's README, "Registering an app"):
- * - password accounts: a username and a password, made by anyone. Better Auth wants
+ * - password accounts: a username and a password, made by anyone (or, with
+ *   `signUp`, by whoever has the invite code). Better Auth wants
  *   an email on every user, so theirs is a stand-in under `.invalid` (never a real
  *   address, so it can't collide with a GAuth one);
  * - GAuth accounts (https://auth.gpeake.com, passkeys over SAML): an account row with
@@ -40,6 +41,11 @@ export interface AuthConfig {
   gauthOrigin: string | undefined;
   /** GAuth's signing certificate(s), PEM, all in one string. */
   gauthCerts: string | undefined;
+  /**
+   * Who may make a password account. Left out: anyone. `{ inviteCode }`: whoever
+   * sends that code as `invite` with the sign-up. `{}` (a missing code): nobody.
+   */
+  signUp?: { inviteCode?: string | undefined };
 }
 
 /** The PEM certificates in a string (a var can't hold a list). */
@@ -71,6 +77,15 @@ export async function signsInWithGAuth(adapter: Adapter, userId: string): Promis
   return row !== null;
 }
 
+/** Whether two strings are equal, in time that doesn't depend on where they differ. */
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const digest = async (s: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+  const [x, y] = await Promise.all([digest(a), digest(b)]);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
 /** Password sign-in endpoints, and the field each names the account by. */
 const PASSWORD_SIGN_IN: Record<string, "email" | "username"> = { "/sign-in/email": "email", "/sign-in/username": "username" };
 
@@ -81,7 +96,7 @@ const PASSWORD_SIGN_IN: Record<string, "email" | "username"> = { "/sign-in/email
  * address nobody uses included, gets "password". So it reveals which addresses use
  * GAuth here, not which accounts exist.
  */
-const accountRules = (appOrigin: string) =>
+const accountRules = ({ appOrigin, signUp }: AuthConfig) =>
   ({
     id: "account-rules",
     endpoints: {
@@ -113,12 +128,20 @@ const accountRules = (appOrigin: string) =>
           }),
         },
         {
-          // Sign-up takes a username and a password, nothing else. The email is
+          // Sign-up takes a username and a password (and the invite code, when
+          // `signUp` asks for one), nothing else. The email is
           // always the stand-in, so nobody can sign up as a real address (which
           // would also block that address's GAuth sign-in: accounts never link by email).
           matcher: (ctx) => ctx.path === "/sign-up/email",
           handler: createAuthMiddleware(async (ctx) => {
             const body = (ctx.body ?? {}) as Record<string, unknown>;
+            if (signUp) {
+              if (!signUp.inviteCode) throw new APIError("FORBIDDEN", { code: "SIGN_UP_CLOSED", message: "Registration is closed." });
+              const invite = typeof body.invite === "string" ? body.invite.trim() : "";
+              if (!invite || !(await sameSecret(invite, signUp.inviteCode))) {
+                throw new APIError("FORBIDDEN", { code: "INVALID_INVITE", message: "That invite code isn't valid." });
+              }
+            }
             const name = body.username;
             if (typeof name !== "string" || !USERNAME.test(name)) {
               throw new APIError("BAD_REQUEST", { code: "INVALID_USERNAME", message: "Usernames are 3–30 letters, numbers or underscores." });
@@ -188,7 +211,7 @@ export function buildAuth(config: AuthConfig) {
     advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
     plugins: [
       username({ minUsernameLength: 3, maxUsernameLength: 30, usernameValidator: (name) => USERNAME.test(name) }),
-      accountRules(appOrigin),
+      accountRules(config),
       sso({
         // GAuth is the only identity provider. Nobody can register another one
         // through the API (which would let them sign in as anyone).

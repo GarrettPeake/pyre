@@ -1,4 +1,4 @@
-// Types for ./dialog.js, for apps written in TypeScript (Pyre).
+// Types for ./dialog.js, for apps written in TypeScript (Pyre, Calendizer).
 
 export interface AccountDialogOptions {
     mode?: 'signin' | 'protect' | 'locked';

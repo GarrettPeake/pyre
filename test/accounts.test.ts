@@ -80,6 +80,19 @@ describe("passwords", () => {
     const old = btoa(String.fromCharCode(...new Uint8Array(bits)));
     expect(await verifyPassword({ hash: `pbkdf2-sha256$100000$${salt}$${old}`, password: "old pw" })).toBe(true);
   });
+  it("reads Calendizer's hashes from before Better Auth (base64 salt bytes)", async () => {
+    // What Calendizer's api/src/auth.ts stored: 16 random salt bytes, base64.
+    const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+    const salt = btoa(String.fromCharCode(...saltBytes));
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode("calendar pw"), "PBKDF2", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: saltBytes, iterations: 100000, hash: "SHA-256" }, key, 256);
+    const old = btoa(String.fromCharCode(...new Uint8Array(bits)));
+    expect(await verifyPassword({ hash: `pbkdf2-sha256-b64salt$100000$${salt}$${old}`, password: "calendar pw" })).toBe(true);
+    expect(await verifyPassword({ hash: `pbkdf2-sha256-b64salt$100000$${salt}$${old}`, password: "calendar px" })).toBe(false);
+    // The same salt read as UTF-8 is a different salt.
+    expect(await verifyPassword({ hash: `pbkdf2-sha256$100000$${salt}$${old}`, password: "calendar pw" })).toBe(false);
+    expect(await verifyPassword({ hash: `pbkdf2-sha256-b64salt$100000$not base64!$${old}`, password: "calendar pw" })).toBe(false);
+  });
 });
 
 describe("password accounts", () => {
@@ -115,6 +128,39 @@ describe("password accounts", () => {
     const days = (new Date(session.expiresAt).getTime() - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(29);
     expect(days).toBeLessThan(31);
+  });
+
+  it("with signUp, sign-up needs the invite code (and with no code, nobody signs up)", async () => {
+    const make = (signUp: { inviteCode?: string }) =>
+      createAccounts({
+        db: d1(sqlite),
+        appOrigin: ORIGIN,
+        secret: "test-secret-test-secret-test-secret-0123456789",
+        gauthOrigin: "https://auth.test",
+        gauthCerts: CERTS,
+        isLinkId: () => false,
+        linkPath: (id) => `/${id}`,
+        signUp,
+      });
+    const signUp = async (json: Record<string, unknown>) => {
+      const res = await accounts.route(
+        new Request(ORIGIN + "/api/auth/sign-up/email", {
+          method: "POST",
+          headers: { Origin: ORIGIN, "Content-Type": "application/json", "CF-Connecting-IP": `10.9.${ip}.${++browsers}` },
+          body: JSON.stringify({ password: "correct horse", email: "", name: "", ...json }),
+        }),
+      );
+      return { status: res!.status, code: ((await res!.json()) as { code?: string }).code };
+    };
+    accounts = make({ inviteCode: "OPEN-SESAME" });
+    expect(await signUp({ username: "nina" })).toEqual({ status: 403, code: "INVALID_INVITE" });
+    expect(await signUp({ username: "nina", invite: "open-sesame" })).toEqual({ status: 403, code: "INVALID_INVITE" });
+    expect((await signUp({ username: "nina", invite: " OPEN-SESAME " })).status).toBe(200);
+    accounts = make({});
+    expect(await signUp({ username: "oscar", invite: "" })).toEqual({ status: 403, code: "SIGN_UP_CLOSED" });
+    expect(await signUp({ username: "oscar", invite: "OPEN-SESAME" })).toEqual({ status: 403, code: "SIGN_UP_CLOSED" });
+    const users = sqlite.prepare(`SELECT "username" FROM "user"`).all();
+    expect(users).toEqual([{ username: "nina" }]);
   });
 
   it("can't change its email or username afterwards", async () => {
