@@ -14,6 +14,8 @@ import {
 } from "../SimulationEngine";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useAuth } from "../contexts/AuthContext";
+import * as accounts from "../accounts/accounts.js";
+import { openAccountDialog } from "../accounts/dialog.js";
 import "./AppPage.css";
 import { v4 as uuidv4 } from "uuid";
 import { type GraphDefinition } from "../types";
@@ -33,27 +35,27 @@ interface SavedPlanData {
     id: string;
     state: BlockState;
   }>;
-  owner?: string;
 }
 
 // API Functions
 interface FetchPlanResult {
   data: SavedPlanData | null;
   status: number;
+  /** Protected by an account (only its session can open it). */
+  isProtected: boolean;
+  /** 403: the browser is signed in, as someone other than the owner. */
+  otherAccount?: boolean;
 }
 
-async function fetchPlan(planId: string, token: string | null): Promise<FetchPlanResult> {
+async function fetchPlan(planId: string): Promise<FetchPlanResult> {
   try {
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`/api/get_plan/${planId}`, { headers });
+    const response = await fetch(`/api/get_plan/${planId}`);
+    const isProtected = response.headers.get("X-Link-Protected") === "1";
 
     if (response.status === 404) {
       return {
         status: 404,
+        isProtected,
         data: {
           simulationName: "My Retirement Plan",
           currentAge: 30,
@@ -66,45 +68,63 @@ async function fetchPlan(planId: string, token: string | null): Promise<FetchPla
     }
 
     if (response.status === 401 || response.status === 403) {
-      return { status: response.status, data: null };
+      const body = await response.json().catch(() => ({}));
+      return { status: response.status, data: null, isProtected: true, otherAccount: Boolean(body.otherAccount) };
     }
 
     if (!response.ok) {
       throw new Error("Failed to fetch plan");
     }
 
-    return { status: 200, data: await response.json() };
+    return { status: 200, isProtected, data: await response.json() };
   } catch (error) {
     console.error("Error fetching plan:", error);
-    return { status: 500, data: null };
+    return { status: 500, isProtected: false, data: null };
   }
 }
 
-async function savePlan(planId: string, data: SavedPlanData, token: string | null): Promise<boolean> {
+/** The response's status: 200 saved, 401/403 the plan needs its owner's session, 0 failed. */
+async function savePlan(planId: string, data: SavedPlanData): Promise<{ status: number; otherAccount?: boolean }> {
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
     const response = await fetch(`/api/save_plan/${planId}`, {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
+    if (response.status === 401 || response.status === 403) {
+      const body = await response.json().catch(() => ({}));
+      return { status: response.status, otherAccount: Boolean(body.otherAccount) };
+    }
     if (!response.ok) {
       throw new Error("Failed to save plan");
     }
-    return true;
+    return { status: 200 };
   } catch (error) {
     console.error("Error saving plan:", error);
-    return false;
+    return { status: 0 };
   }
 }
 
-// Default global initialization
+// Edits a save couldn't store because the session had ended. Kept for this tab until
+// the plan opens again (after signing back in), then saved.
+const unsavedKey = (planId: string) => `pyre.unsaved.${planId}`;
+function keepUnsaved(planId: string, data: SavedPlanData) {
+  try {
+    sessionStorage.setItem(unsavedKey(planId), JSON.stringify(data));
+  } catch {
+    // Storage unavailable: the edit is lost, as before.
+  }
+}
+function takeUnsaved(planId: string): SavedPlanData | null {
+  try {
+    const raw = sessionStorage.getItem(unsavedKey(planId));
+    sessionStorage.removeItem(unsavedKey(planId));
+    return raw ? (JSON.parse(raw) as SavedPlanData) : null;
+  } catch {
+    return null;
+  }
+}
+
 const DEFAULT_GLOBAL_INIT = `k401 = 100000
 cash = 100000
 investments = 200000
@@ -194,7 +214,7 @@ const EMPTY_BLOCK_STATE: BlockState = {
 function AppPage() {
   const { planId } = useParams<{ planId: string }>();
   const navigate = useNavigate();
-  const { user, token, isLoading: isAuthLoading, login, logout } = useAuth();
+  const { user, isLoading: isAuthLoading, authError, clearAuthError, refresh, signOut } = useAuth();
 
   const [simulationName, setSimulationName] =
     useState<string>("My Retirement Plan");
@@ -203,7 +223,9 @@ function AppPage() {
   const [globalInit, setGlobalInit] = useState<string>(DEFAULT_GLOBAL_INIT);
   const [graphs, setGraphs] = useState<GraphDefinition[]>(DEFAULT_GRAPHS);
   const [blocks, setBlocks] = useState<BlockData[]>([]);
-  const [planOwner, setPlanOwner] = useState<string | undefined>(undefined);
+  const [isProtected, setIsProtected] = useState<boolean>(false);
+  // Bumped to load the plan again (after signing in to open it).
+  const [reloadKey, setReloadKey] = useState<number>(0);
   const [isSaved, setIsSaved] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEditingSetup, setIsEditingSetup] = useState<boolean>(false);
@@ -216,17 +238,50 @@ function AppPage() {
   const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [isCreatingShare, setIsCreatingShare] = useState<boolean>(false);
-  const [showLinkModal, setShowLinkModal] = useState<boolean>(false);
-  const [linkUsername, setLinkUsername] = useState<string>("");
-  const [linkPassword, setLinkPassword] = useState<string>("");
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const [isLinking, setIsLinking] = useState<boolean>(false);
+  const [isProtecting, setIsProtecting] = useState<boolean>(false);
+  // Set while asking for a sign-in, so a save and a load don't both ask.
+  const unlocking = useRef<boolean>(false);
   const simulateButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isAnonymousPlan = !planOwner;
+  const here = `/app/${planId}`;
 
-  // Load plan data from backend on mount
+  /**
+   * The plan is protected and this browser can't open it (401: no session, 403:
+   * someone else's). A GAuth account whose session ran out goes straight back through
+   * GAuth; otherwise the dialog asks for the owner's sign-in. Closing it leaves.
+   */
+  const unlock = useCallback(
+    async (status: number, otherAccount?: boolean) => {
+      if (!planId || unlocking.current) return;
+      unlocking.current = true;
+      if (status === 401 && !authError && accounts.mayAutoSignIn()) {
+        accounts.autoSignIn(here);
+        return;
+      }
+      const error = authError;
+      clearAuthError();
+      const result = await openAccountDialog({
+        mode: "locked",
+        linkId: planId,
+        next: here,
+        otherAccount: status === 403 || otherAccount,
+        error,
+        text: { title: "This simulation is protected", intro: "Sign in as its owner to open it." },
+      });
+      unlocking.current = false;
+      if (result.signedIn) {
+        await refresh();
+        setIsLoading(true);
+        setReloadKey((k) => k + 1);
+      } else {
+        navigate("/");
+      }
+    },
+    [planId, here, authError, clearAuthError, refresh, navigate]
+  );
+
+  // Load plan data from backend on mount (and again after signing in to open it)
   useEffect(() => {
     if (!planId || isAuthLoading) {
       if (!isAuthLoading && !planId) {
@@ -235,37 +290,49 @@ function AppPage() {
       return;
     }
 
-    fetchPlan(planId, token).then((result) => {
-      if (result.status === 401) {
-        // Redirect to login with return URL
-        navigate(`/?return=/app/${planId}`);
+    let cancelled = false;
+    fetchPlan(planId).then(async (result) => {
+      if (cancelled) return;
+      if (result.status === 401 || result.status === 403) {
+        unlock(result.status, result.otherAccount);
         return;
       }
 
-      if (result.status === 403) {
-        // User doesn't own this plan
-        alert("You don't have access to this plan.");
-        navigate("/dashboard");
-        return;
-      }
-
-      if (result.data) {
-        setSimulationName(result.data.simulationName);
-        setCurrentAge(result.data.currentAge);
-        setRetirementAge(result.data.retirementAge);
-        setGlobalInit(result.data.globalInit);
-        setGraphs(result.data.graphs);
-        setPlanOwner(result.data.owner);
+      // Edits from before a sign-in (the session had ended) win over what's stored.
+      const data = takeUnsaved(planId) ?? result.data;
+      if (data) {
+        setSimulationName(data.simulationName);
+        setCurrentAge(data.currentAge);
+        setRetirementAge(data.retirementAge);
+        setGlobalInit(data.globalInit);
+        setGraphs(data.graphs);
         setBlocks(
-          result.data.blocks.map((block) => ({
+          data.blocks.map((block) => ({
             id: block.id,
             state: block.state,
           }))
         );
       }
+      setIsProtected(result.isProtected);
       setIsLoading(false);
+
+      // Protecting it went through GAuth and has just come back signed in.
+      if (!result.isProtected && accounts.takePendingProtect(planId)) {
+        try {
+          await accounts.protect(planId);
+          setIsProtected(true);
+          refresh();
+        } catch (error) {
+          alert(error instanceof Error ? error.message : "Couldn't protect this simulation.");
+        }
+      }
     });
-  }, [planId, token, isAuthLoading, navigate]);
+    return () => {
+      cancelled = true;
+    };
+    // unlock changes with the auth error; loading again for that isn't wanted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planId, isAuthLoading, reloadKey]);
 
   // Save plan to backend
   const saveToBackend = useCallback(
@@ -282,15 +349,18 @@ function AppPage() {
           id: block.id,
           state: block.state,
         })),
-        owner: planOwner,
       };
 
-      const success = await savePlan(planId, planData, token);
-      if (success) {
+      const result = await savePlan(planId, planData);
+      if (result.status === 200) {
         setIsSaved(true);
+      } else if (result.status === 401 || result.status === 403) {
+        // The session ended (or changed) mid-edit: keep the edit, sign in, save it then.
+        keepUnsaved(planId, planData);
+        unlock(result.status, result.otherAccount);
       }
     },
-    [planId, simulationName, currentAge, retirementAge, globalInit, graphs, planOwner, token]
+    [planId, simulationName, currentAge, retirementAge, globalInit, graphs, unlock]
   );
 
   // Handle block state changes - update state immediately
@@ -463,14 +533,8 @@ function AppPage() {
 
     setIsCreatingShare(true);
     try {
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-
       const response = await fetch(`/api/create_share/${planId}`, {
         method: "POST",
-        headers,
       });
 
       if (!response.ok) {
@@ -489,99 +553,50 @@ function AppPage() {
     } finally {
       setIsCreatingShare(false);
     }
-  }, [planId, token]);
+  }, [planId]);
 
-  // Link plan to account
-  const handleLinkToAccount = useCallback(async () => {
+  // Protect this plan with an account: the signed-in one, or one the dialog signs in
+  // to or creates. Protecting through GAuth leaves the page; the load above finishes it.
+  const handleProtect = useCallback(async () => {
     if (!planId) return;
-
-    // If already signed in, just link directly
-    if (user && token) {
-      setIsLinking(true);
-      try {
-        const response = await fetch("/api/plans/link", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ sourcePlanId: planId }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to link plan");
-        }
-
-        const data = await response.json();
-        navigate(`/app/${data.newPlanId}`);
-      } catch (error) {
-        console.error("Error linking plan:", error);
-        alert(error instanceof Error ? error.message : "Failed to link plan");
-      } finally {
-        setIsLinking(false);
-      }
-      return;
-    }
-
-    // Show modal to sign in/create account
-    setShowLinkModal(true);
-  }, [planId, user, token, navigate]);
-
-  // Handle link modal form submission
-  const handleLinkModalSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!planId) return;
-
-    setLinkError(null);
-    setIsLinking(true);
-
+    setIsProtecting(true);
     try {
-      // First login/signup
-      const loginResult = await login(linkUsername, linkPassword);
-      if (!loginResult.success) {
-        setLinkError(loginResult.error || "Authentication failed");
+      if (user) {
+        await accounts.protect(planId);
+        setIsProtected(true);
+        await refresh();
         return;
       }
-
-      // Get the new token from localStorage
-      const newToken = localStorage.getItem("pyre_auth_token");
-      if (!newToken) {
-        setLinkError("Failed to get authentication token");
-        return;
-      }
-
-      // Link the plan
-      const response = await fetch("/api/plans/link", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${newToken}`,
+      const result = await openAccountDialog({
+        mode: "protect",
+        linkId: planId,
+        next: here,
+        text: {
+          title: "Protect this simulation",
+          intro: "Only you will be able to open it, on any device, once signed in. Sign in or create an account to protect it.",
         },
-        body: JSON.stringify({ sourcePlanId: planId }),
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to link plan");
-      }
-
-      const data = await response.json();
-      setShowLinkModal(false);
-      navigate(`/app/${data.newPlanId}`);
+      if (!result.signedIn) return;
+      await refresh();
+      if (result.protected) setIsProtected(true);
+      else if (result.error) alert(result.error);
     } catch (error) {
-      console.error("Error linking plan:", error);
-      setLinkError(error instanceof Error ? error.message : "Failed to link plan");
+      alert(error instanceof Error ? error.message : "Couldn't protect this simulation.");
     } finally {
-      setIsLinking(false);
+      setIsProtecting(false);
     }
-  }, [planId, linkUsername, linkPassword, login, navigate]);
+  }, [planId, here, user, refresh]);
 
-  // Handle logout
+  const handleSignIn = useCallback(async () => {
+    const result = await openAccountDialog({ next: here });
+    if (result.signedIn) await refresh();
+  }, [here, refresh]);
+
+  // Signing out of a protected plan leaves it (it no longer opens here).
   const handleLogout = useCallback(async () => {
-    await logout();
+    await signOut();
     navigate("/");
-  }, [logout, navigate]);
+  }, [signOut, navigate]);
 
   // Track visibility of original Simulate button
   useEffect(() => {
@@ -683,21 +698,21 @@ function AppPage() {
                 />
               </svg>
             </div>
-            {isAnonymousPlan ? (
+            {!isProtected ? (
               <p className="header-link">Bookmark your secret link!</p>
             ) : (
               <p className="header-link protected-badge">Protected by account</p>
             )}
           </div>
           <div className="export-import-buttons">
-            {isAnonymousPlan && (
+            {!isProtected && (
               <button
                 className="link-account-button"
-                onClick={handleLinkToAccount}
-                disabled={isLinking}
-                title="Link this plan to your account"
+                onClick={handleProtect}
+                disabled={isProtecting}
+                title="Only you will be able to open it, once signed in"
               >
-                {isLinking ? "Linking..." : "Link to Account"}
+                {isProtecting ? "Protecting..." : "Protect"}
               </button>
             )}
             <button
@@ -794,16 +809,16 @@ function AppPage() {
             {user ? (
               <div className="user-section">
                 <Link to="/dashboard" className="user-dashboard-link">
-                  {user.username}
+                  {user.name}
                 </Link>
                 <button className="logout-button" onClick={handleLogout}>
                   Logout
                 </button>
               </div>
             ) : (
-              <Link to="/" className="login-link">
+              <button type="button" className="login-link" onClick={handleSignIn}>
                 Sign In
-              </Link>
+              </button>
             )}
             <div className="hero-links">
               <a
@@ -1308,64 +1323,6 @@ function AppPage() {
         </div>
       </Modal>
 
-      <Modal
-        isOpen={showLinkModal}
-        onClose={() => {
-          setShowLinkModal(false);
-          setLinkError(null);
-          setLinkUsername("");
-          setLinkPassword("");
-        }}
-        title="Link to Your Account"
-      >
-        <div className="link-modal-content">
-          <p>
-            Sign in or create an account to protect this simulation. A copy will
-            be created and linked to your account.
-          </p>
-          <form onSubmit={handleLinkModalSubmit} className="link-modal-form">
-            <input
-              type="text"
-              className="link-modal-input"
-              placeholder="Username"
-              value={linkUsername}
-              onChange={(e) => setLinkUsername(e.target.value)}
-              disabled={isLinking}
-              autoComplete="username"
-            />
-            <input
-              type="password"
-              className="link-modal-input"
-              placeholder="Password"
-              value={linkPassword}
-              onChange={(e) => setLinkPassword(e.target.value)}
-              disabled={isLinking}
-              autoComplete="current-password"
-            />
-            {linkError && <p className="link-modal-error">{linkError}</p>}
-            <div className="link-modal-buttons">
-              <button
-                type="button"
-                className="link-modal-cancel"
-                onClick={() => {
-                  setShowLinkModal(false);
-                  setLinkError(null);
-                }}
-                disabled={isLinking}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="link-modal-submit"
-                disabled={isLinking || !linkUsername || !linkPassword}
-              >
-                {isLinking ? "Linking..." : "Sign In & Link"}
-              </button>
-            </div>
-          </form>
-        </div>
-      </Modal>
     </div>
   );
 }

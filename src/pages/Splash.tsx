@@ -1,66 +1,63 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth, safeReturn } from "../contexts/AuthContext";
+import * as accounts from "../accounts/accounts.js";
+import { openAccountDialog } from "../accounts/dialog.js";
 import "./Splash.css";
 
 function Splash() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, isLoading, login } = useAuth();
+  const { user, isLoading, authError, clearAuthError, refresh } = useAuth();
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const returnTo = safeReturn(searchParams.get("return"));
 
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Redirect if already logged in
+  // Signed in already: on to the account's simulations (or where they were going).
   useEffect(() => {
-    if (!isLoading && user) {
-      const returnUrl = searchParams.get("return");
-      if (returnUrl) {
-        navigate(returnUrl);
-      } else {
-        navigate("/dashboard");
-      }
+    if (!isLoading && user && !isSigningIn) {
+      navigate(returnTo ?? "/dashboard", { replace: true });
     }
-  }, [isLoading, user, navigate, searchParams]);
+  }, [isLoading, user, isSigningIn, navigate, returnTo]);
 
   const handleStartAnonymous = () => {
-    const uuid = uuidv4();
-    navigate(`/app/${uuid}`);
+    navigate(`/app/${uuidv4()}`);
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
-
-    try {
-      const result = await login(username, password);
-
-      if (!result.success) {
-        setError(result.error || "Login failed");
+  /** The sign-in dialog. A GAuth sign-in leaves the page and comes back to `next`. */
+  const signIn = useCallback(
+    async (start?: "register") => {
+      setIsSigningIn(true);
+      const error = authError;
+      clearAuthError();
+      const result = await openAccountDialog({ start, error, next: returnTo ?? "/dashboard" });
+      if (!result.signedIn) {
+        setIsSigningIn(false);
         return;
       }
-
-      // Navigate based on result
-      const returnUrl = searchParams.get("return");
-      if (returnUrl) {
-        navigate(returnUrl);
-      } else if (result.isNewUser && result.planIds && result.planIds.length > 0) {
-        // New user - go to their first plan
-        navigate(`/app/${result.planIds[0]}`);
+      const me = await accounts.me();
+      if (returnTo) {
+        navigate(returnTo);
+      } else if (me.signedIn && me.links.length === 0) {
+        // A new account starts with a simulation of its own.
+        const id = uuidv4();
+        await accounts.protect(id).catch(() => null);
+        navigate(`/app/${id}`);
       } else {
-        // Existing user - go to dashboard
         navigate("/dashboard");
       }
-    } catch {
-      setError("An unexpected error occurred");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+      await refresh();
+    },
+    [authError, clearAuthError, navigate, refresh, returnTo]
+  );
+
+  // A GAuth sign-in that came back with an error: say why (once; effects can run twice).
+  const shownError = useRef(false);
+  useEffect(() => {
+    if (isLoading || user || !authError || shownError.current) return;
+    shownError.current = true;
+    signIn();
+  }, [isLoading, user, authError, signIn]);
 
   if (isLoading) {
     return (
@@ -115,34 +112,22 @@ function Splash() {
           </div>
 
           <div className="auth-section">
-            <form className="auth-form" onSubmit={handleLogin}>
-              <input
-                type="text"
-                className="auth-input"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={isSubmitting}
-                autoComplete="username"
-              />
-              <input
-                type="password"
-                className="auth-input"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isSubmitting}
-                autoComplete="current-password"
-              />
-              {error && <p className="auth-error">{error}</p>}
+            <div className="auth-form">
               <button
-                type="submit"
+                type="button"
                 className="cta-button primary auth-button"
-                disabled={isSubmitting || !username || !password}
+                onClick={() => signIn()}
               >
-                {isSubmitting ? "Please wait..." : "Sign In / Create Account"}
+                Sign In
               </button>
-            </form>
+              <button
+                type="button"
+                className="cta-button secondary auth-button"
+                onClick={() => signIn("register")}
+              >
+                Create Account
+              </button>
+            </div>
 
             <div className="auth-divider">
               <span>or</span>

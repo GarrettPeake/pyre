@@ -3,13 +3,16 @@
   "name": "retirement-calculator",
   "main": "worker/index.ts",
   "compatibility_date": "2025-11-15",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // Account routes are navigations too (/auth/gauth, GAuth's answer): without this
+    // the SPA fallback would serve index.html for them.
+    "run_worker_first": ["/api/*", "/auth/*"]
   },
   "observability": {
     "enabled": true
   },
-  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "routes": [
     {
@@ -22,5 +25,21 @@
       "binding": "FINANCIAL_PLANS",
       "id": "174996f3445349769629543804dfb7fc"
     }
-  ]
+  ],
+  // Accounts (worker/accounts): Better Auth's tables and which plans are protected.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pyre",
+      "database_id": "a2eadd1d-913c-40af-bbfa-d014db488fe5",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Secret: BETTER_AUTH_SECRET. Local overrides of these go in .dev.vars.
+  "vars": {
+    "APP_ORIGIN": "https://pyre.gpeake.com",
+    "GAUTH_ORIGIN": "https://auth.gpeake.com",
+    // GAuth's signing certificate (GAuth admin, the app's page).
+    "GAUTH_CERTS": "-----BEGIN CERTIFICATE-----\nMIIETzCCAregAwIBAgIUQTIyLSxY+lMKtuSPlsypAZWXWRIwDQYJKoZIhvcNAQEL\nBQAwNzEYMBYGA1UEAwwPYXV0aC5ncGVha2UuY29tMRswGQYDVQQKDBJHQXV0aCBT\nQU1MIHNpZ25pbmcwHhcNMjYxMTA5MDIxMDMxWhcNMzExMTA5MDIxMDMxWjA3MRgw\nFgYDVQQDDA9hdXRoLmdwZWFrZS5jb20xGzAZBgNVBAoMEkdBdXRoIFNBTUwgc2ln\nbmluZzCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoCggGBAKobG6FczKAEssZd\npHx6uw1F5htqb8daARRvo8VZvHQdoLzohPMGki8VNfAMbRakqjun0enh4yOihhVZ\nDSrJjr9YQa5AY5feghGtHDk4THqHVOiniZ47kFP+bHQrKinD4kcwL48UnUi2a0Ic\naMA25VFhWBCKdoKBMPCFL/eBZ5VdTw/LDyHGW9rQSwsIzF1RlOnkOZyAXqjw5XLM\nLEFETjww0s/3nzluYK6NlI5D+f2qU+WzIuRaSJqGO4S35X8q2iNei63yXU5cTCrr\n9nndaa65LoP0GDt3PnWHVpZ0q5riqJ9FkGG0+w/iNRZv9iihE7pVtMR+O2ssQmJc\nqm6o0dnFQ0WBFlfnkIBS5mj8BOLaQ3X1aMojlvkTpdqVBTBB8Et9ywEjuRB3D27g\nqS0urDLbnNTrraLjUowcOUWsK8lcMldCubuujjyBCCJeKjz9xsdVTAs1KFfD8ITt\nJYPF5aF2WGOMj4lPGWlOIgsH/1oE4grTNBP+kbSLQmZ4/mGIIwIDAQABo1MwUTAd\nBgNVHQ4EFgQUsasqlt3BMFxnUpF3/lwtS8+rHFkwHwYDVR0jBBgwFoAUsasqlt3B\nMFxnUpF3/lwtS8+rHFkwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOC\nAYEAHA9475KmGxmg5CotZKyYwI+LKC6SMR4nwWrJyz4G3x+We2L2+zOXnF6waDIq\nPU1L6e8cT+cOurn4d9m3GgL4wN4Xy+H2EgPP979TdXPmTD00MNY1SMMoIoW7fwkP\ncTLROsPgTBDY+v9OzkGgRwmoG3EJZjsw+i5kMmglBoT3zaPaxb6t+lBoTdZEmwEV\ng0Fs1dgC0PNpJlBxVF9qKz4g9XsyknViQxpZVKJ6wL5fi4xir5m0RB8PsHFlAYcS\nDwOojRno/0I+pGhPf9qR6/4H+GKIu+vC6qsbhfJTTbwCrbETwp/uB+J9x1mCmXSb\nrIa3P4kaiM1jQweM8ZXOg79f2PvwyCBG/ldbmKbLcd38sDtcFFuOeoLE+BhE4A7z\nPS7Gx9QCNg8Ige4W3Hlmq0/L8snW4KmUSWqw8m6uUUDRiZjEWg9RAcEqnzha9GIm\nsxnaPezdf3oLRHkF3lt8I0TkFeYGDHJsZ6UFJdhcjSD1bQUQQlfE3WRgktlyR/Zh\no6Y+\n-----END CERTIFICATE-----"
+  }
 }

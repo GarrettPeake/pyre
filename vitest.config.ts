@@ -1,11 +1,10 @@
-import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
+import { defineConfig } from "vitest/config";
 
-export default defineWorkersConfig({
+// Everything runs in Node: the worker against an in-memory KV and SQLite standing in
+// for D1 (test/d1.ts), the simulation code as is.
+export default defineConfig({
   test: {
-    poolOptions: {
-      workers: {
-        wrangler: { configPath: "./wrangler.toml" },
-      },
-    },
+    include: ["src/**/__tests__/**/*.test.ts", "worker/**/__tests__/**/*.test.ts", "test/**/*.test.ts"],
+    environment: "node",
   },
 });

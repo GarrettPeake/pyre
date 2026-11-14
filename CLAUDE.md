@@ -95,38 +95,30 @@ This project uses Cloudflare workers to serve both the front and backend. The ba
 
 The backend is intentionally simple - all computational logic runs on the frontend. The backend worker serves the following purposes:
 
-### Plan Management Endpoints
-1. **`GET /api/get_plan/<key>`** - Retrieves saved financial plans from Cloudflare KV storage. Protected plans require authentication via `Authorization: Bearer <token>` header.
-2. **`POST /api/save_plan/<key>`** - Saves financial plans to Cloudflare KV storage. Protected plans require authentication from the owner.
-3. **`POST /api/create_share/<planId>`** - Creates a read-only share link for an existing plan (returns `{ shareId }`). Protected plans require owner authentication.
-4. **`GET /api/get_share/<shareId>`** - Retrieves plan data via a share link (read-only access, bypasses auth)
+### Plan Endpoints
+Plan and share ids are UUIDs; every endpoint refuses anything else (KV also holds `share:` and old `user:` records, which must never be read or written as plans).
 
-### Authentication Endpoints
-5. **`POST /api/auth/login`** - Combined login/signup endpoint. If username exists, verifies password. If username doesn't exist, creates account with a default first plan (matching the anonymous plan defaults via `createDefaultPlan()`). Returns JWT token.
-6. **`GET /api/auth/me`** - Returns current user info (username, planIds) if authenticated
-7. **`POST /api/auth/logout`** - Placeholder for future token blocklist functionality
+1. **`GET /api/get_plan/<planId>`** - The plan from KV, or 404 for a new one. `X-Link-Protected: 1|0` says whether an account protects it. A protected plan answers 401/403 `{ protected: true, otherAccount? }` outside its owner's session.
+2. **`POST /api/save_plan/<planId>`** - Saves the plan (JSON object, at most 2 MB; `lastModified` is set, any `owner` field dropped). Same access rule.
+3. **`DELETE /api/plans/<planId>`** - The owner deletes a protected plan (KV record and its protection).
+4. **`POST /api/create_share/<planId>`** - A read-only share link (`{ shareId }`), for whoever may use the plan.
+5. **`GET /api/get_share/<shareId>`** - The plan, read-only. Holding the share link is enough.
 
-### Plan Operations Endpoints
-8. **`GET /api/plans`** - Returns plan summaries for authenticated user (id, simulationName, lastModified)
-9. **`POST /api/plans/create`** - Creates a new plan for authenticated user using `createDefaultPlan()` (same defaults as anonymous plans), adds to their planIds
-10. **`POST /api/plans/link`** - Links an anonymous plan to authenticated user's account (clones to new protected plan)
-11. **`DELETE /api/plans/:planId`** - Deletes a protected plan (owner authentication required)
+### Accounts (`worker/accounts/`, shared with Decklister)
+The same module as Decklister's (`src/accounts` there); see `worker/accounts/README.md` for the flows. Change it in one app, copy it to the other.
+- **Anyone can use a plan without an account** (the URL is the secret). Any account can **protect** any plan whose link it holds: from then on it opens only in that account's session. One account protects any number of plans.
+- **Accounts**: username + password (Better Auth, PBKDF2, 30-day sessions) or **GAuth** (passkeys, https://auth.gpeake.com, SAML, 12-hour sessions), never both. GAuth starts by itself when (a) this browser last signed in with GAuth and finds its session gone, or (b) someone types a GAuth account's email in the sign-in dialog.
+- Routes: `/api/auth/*` (Better Auth), `GET /api/account` (who's signed in + their plans, labelled with `simulationName`), `POST /api/account/links {id}` (protect), `GET /auth/gauth?next=`, `GET /auth/error`.
+- **Storage**: D1 `pyre` (binding `DB`, `migrations/`): Better Auth's tables and `protectedLink` (plan id → user). Plans stay in KV.
+- **Security**: cross-origin writes are refused (`crossOriginPost`), other hosts redirect to `APP_ORIGIN`, cookies are host-only.
+- **Config**: vars `APP_ORIGIN`, `GAUTH_ORIGIN`, `GAUTH_CERTS`; secret `BETTER_AUTH_SECRET`. `run_worker_first` covers `/api/*` and `/auth/*` (navigations to `/auth/*` would otherwise get the SPA).
+- **Old accounts** (KV `user:<name>` with a JWT, before 2026-11) were moved with `scripts/migrate-legacy-accounts.mjs`; `scripts/link-gauth.mjs` moves a password account to GAuth.
 
 ### Data Storage Schema
-- Plans: `{planId}` → SavedPlanData (with optional `owner` field for protected plans)
-- Share links: `share:{shareId}` → planId
-- Users: `user:{username}` → UserRecord (username, passwordHash, salt, createdAt, planIds)
+- KV `FINANCIAL_PLANS`: `{planId}` → SavedPlanData; `share:{shareId}` → planId; `user:{username}` → old account records (no longer read).
+- D1 `pyre`: accounts and `protectedLink`.
 
-### Authentication
-- **JWT tokens**: HMAC-SHA256 signed using `JWT_SECRET` environment variable
-- 30-day token expiration
-- Stateless verification (no KV read required)
-- Passwords hashed with PBKDF2 (100,000 iterations, SHA-256)
-
-### Default Plan Helper
-The `createDefaultPlan(owner)` function in `worker/index.ts` generates a fully-configured default plan matching the anonymous plan defaults in `src/pages/AppPage.tsx`. This ensures consistent initial plans whether created via signup, the dashboard "New Simulation" button, or anonymous access. The default plan includes the "My Retirement Plan" simulation with a home loan block, Net Worth graph, and Mortgage graph.
-
-All calculations, block execution, and financial modeling happen client-side. The backend is purely a persistence layer using Cloudflare's KV store with the `FINANCIAL_PLANS` binding and `JWT_SECRET` for authentication.
+All calculations, block execution, and financial modeling happen client-side. The backend is a persistence layer plus accounts.
 
 ## Frontend Architecture
 
@@ -134,16 +126,16 @@ The frontend uses React with React Router for navigation. The application has tw
 
 ### Routing Structure
 
-- **`/`** - Splash page (landing page with login/signup form)
+- **`/`** - Splash page (landing page with Sign In / Create Account)
 - **`/dashboard`** - Dashboard page for authenticated users to manage their plans
 - **`/app/:planId`** - Main application page with a unique plan ID
 - **`/share/:shareId`** - Read-only view of a shared plan
 
 **Authentication Flow:**
-1. **Anonymous users** can click "Start without account" to create an anonymous plan at `/app/<uuid>`
-2. **New accounts** are created by entering username + password on the splash page. A first plan is auto-created and the user navigates to it.
-3. **Returning users** log in via the splash page and are redirected to `/dashboard`
-4. **Protected plans** require authentication - unauthenticated access redirects to `/` with a return URL
+1. **Anonymous users** click "Start without account" for a plan at `/app/<uuid>`
+2. **Sign In / Create Account** on the splash page open the shared sign-in dialog (`src/accounts/dialog.js`). A new account starts with a protected plan of its own; otherwise to `/dashboard`.
+3. **Protect** on a plan protects it in place (same link) with the signed-in account, or one the dialog signs in to or creates
+4. **Protected plans** outside their owner's session show the dialog in place (GAuth accounts whose session expired go straight back through GAuth instead)
 
 Users can create read-only share links from their plan using the Share button, which generates a unique share URL. Recipients of share links can view the simulation and graphs but cannot modify the plan.
 
@@ -153,11 +145,10 @@ Users can create read-only share links from their plan using the Share button, w
 
    - Landing page with modern, finance-focused design
    - Features the PYRE logo (orange with drop shadow) and tagline "Plan Your Retirement Easily"
-   - **Login/Signup Form**: Combined authentication form with username and password fields
-     - Single "Sign In / Create Account" button handles both flows
-     - New users get an account created + first plan generated automatically
-     - Existing users are redirected to `/dashboard`
-     - Supports `?return=` URL parameter for post-login redirect
+   - **Sign In** / **Create Account** buttons open the sign-in dialog (typing a GAuth email there goes to GAuth)
+     - A new account with no plans gets a protected plan and goes to it; otherwise `/dashboard`
+     - Supports `?return=` (paths of this site only)
+     - Shows a GAuth sign-in's error (`?auth_error=`) in the dialog
    - "Start without account" button creates anonymous plan (preserves original flow)
    - Displays feature highlights: "Free, Ad Free, Open Source, No Tracking"
    - Links to GitHub and Ko-Fi
@@ -180,23 +171,20 @@ Users can create read-only share links from their plan using the Share button, w
 
    - On page load, fetches plan data from backend using the planId via `/api/get_plan/<planId>`
    - If no saved plan exists, uses default example block configuration with simulationName "My Retirement Plan"
-   - **Auth handling**: Protected plans return 401/403 if user is not authenticated or not the owner
-     - 401: Redirects to `/` with `?return=/app/{planId}` for login
-     - 403: Shows alert and redirects to `/dashboard`
+   - **Locked plans** (401/403): a GAuth account whose session expired goes back through GAuth by itself; otherwise the dialog asks for the owner's sign-in (with a sign-out offer if someone else is signed in). Closing it goes to `/`.
    - Automatically saves plan data (simulationName, currentAge, retirementAge, globalInit, graphs, blocks) on changes with 1-second debounce
    - Save status indicator (checkmark icon) next to planId in header:
      - Green when data is saved
      - Grey when unsaved changes exist
-   - SavedPlanData includes: simulationName, currentAge, retirementAge, globalInit, graphs, blocks[], owner?
+   - SavedPlanData includes: simulationName, currentAge, retirementAge, globalInit, graphs, blocks[]
+   - A save refused for want of a session keeps the edit in sessionStorage (`pyre.unsaved.<planId>`), signs in, and saves it when the plan opens again
 
    **Authentication Features:**
 
-   - **Header auth section** (right side): Shows user link to dashboard + logout button when authenticated, or "Sign In" link when not
-   - **Plan protection indicator**: Shows "Protected by account" instead of "Bookmark your secret link!" for protected plans
-   - **Link to Account button**: Shown for anonymous plans, allows linking plan to user's account
-     - If signed in: Clones plan to new protected URL immediately
-     - If not signed in: Opens modal with login/signup form, then clones plan
-   - All API requests include `Authorization: Bearer <token>` header when authenticated
+   - **Header auth section** (right side): the account's name (to the dashboard) + Logout, or a "Sign In" button opening the dialog
+   - **Plan protection indicator**: "Protected by account" instead of "Bookmark your secret link!" (from `X-Link-Protected`)
+   - **Protect button**: shown on unprotected plans. Signed in: protects it at once. Otherwise the dialog signs in or creates an account, then protects it; through GAuth, the page finishes it on return (`takePendingProtect`)
+   - Requests carry the session cookie (same origin); no auth headers
 
    **Share Links:**
 
@@ -279,15 +267,14 @@ Users can create read-only share links from their plan using the Share button, w
 4. **Dashboard Page** (`src/pages/Dashboard.tsx`)
 
    - Protected page for authenticated users to manage their plans
-   - Redirects to `/` if user is not authenticated
-   - **Header**: PYRE logo (links to home), welcome message with username, logout button
-   - **Plan Grid**: Displays all user's plans as cards with:
+   - Not signed in: a GAuth account whose session expired goes back through GAuth by itself; anyone else to `/`
+   - **Header**: PYRE logo (links to home), welcome message with the account's name, logout button
+   - **Plan Grid**: the account's protected plans (from `GET /api/account`) as cards with:
      - Plan name (links to `/app/:planId`)
-     - Last modified date
+     - When it was protected
      - Delete button (with confirmation dialog)
-   - **Create Plan**: "+ New Simulation" button creates a new protected plan and navigates to it
+   - **Create Plan**: "+ New Simulation" protects a new plan id and opens it (the plan is saved on first load)
    - **Empty State**: Shows message and "Create Your First Simulation" button when no plans exist
-   - Fetches plan summaries via `GET /api/plans`
 
 ### Components
 
@@ -534,25 +521,13 @@ A data module containing prebuilt financial block templates. Each template is a 
 
 **AuthContext** (`src/contexts/AuthContext.tsx`)
 
-Provides authentication state and functions to the entire application. Wraps the app in `App.tsx`.
+Who is signed in, for every page, on top of `src/accounts/accounts.js` (the shared browser half of worker/accounts; types in the `.d.ts` files beside it; themed through `--acct-*` in variables.css).
 
-**State:**
-
-- `user`: Current user object `{ username: string, planIds: string[] }` or null
-- `token`: JWT token string or null
-- `isLoading`: Boolean indicating initial auth check in progress
-
-**Functions:**
-
-- `login(username, password)`: Combined login/signup. Returns `{ success, error?, isNewUser?, planIds? }`
-- `logout()`: Clears token from localStorage and resets state
-- `refreshUser()`: Re-fetches user data from `/api/auth/me`
-
-**Behavior:**
-
-- On mount, checks localStorage for existing token (`pyre_auth_token`)
-- Validates token with `/api/auth/me` endpoint
-- Invalid tokens are automatically cleared
+- `user`: `{ name, username, method: "gauth" | "password" }` or null
+- `links`: the plans the account protects `{ id, path, label, protectedAt }`, newest first
+- `isLoading`, `refresh()`, `signOut()`
+- `authError` / `clearAuthError()`: a GAuth sign-in's `?auth_error=`, taken from the URL once per page load
+- `safeReturn(value)`: a `?return=` path of this site, or null
 
 ### Hooks
 
@@ -700,15 +675,16 @@ This example showcases:
 ### Dependencies
 
 - **D3.js** (`d3`, `@types/d3`) - Used for all graph visualizations throughout the application
-- **Vitest** (`vitest`, `@cloudflare/vitest-pool-workers`) - Unit testing framework with Cloudflare Workers runtime support
+- **Better Auth** (`better-auth`, `@better-auth/sso`, `zod`) - Accounts and GAuth (SAML) in worker/accounts; loaded only by requests that touch an account
+- **Vitest** (`vitest`) - Unit tests, in Node
 
 ### Testing
 
-Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-workers`. The project has comprehensive test coverage across the frontend simulation engine, math language utilities, and backend API.
+Tests run in Node: the worker against an in-memory KV and SQLite standing in for D1 (`test/d1.ts`, migrations applied as written; needs Node 22.5+ for `node:sqlite`).
 
 **Commands:**
 
-- `npm test` - Run all tests once (136 tests across 3 test files)
+- `npm test` - Run all tests once
 - `npm run test:watch` - Run tests in watch mode
 
 **Test Files:**
@@ -735,19 +711,17 @@ Tests run in the Cloudflare Workers environment using `@cloudflare/vitest-pool-w
    - Complex financial scenarios (savings accumulation, compound growth)
    - Error handling (graceful handling of invalid code in init/execution)
 
-3. **`worker/__tests__/index.test.ts`** (31 tests) - Tests for the backend API:
-   - GET `/api/get_plan/:key` (missing key, plan not found, successful retrieval, CORS headers)
-   - POST `/api/save_plan/:key` (missing key, successful save, overwriting existing, large plans)
-   - POST `/api/create_share/:planId` (missing plan ID, plan not found, successful creation, UUID format validation, KV storage verification, CORS headers)
-   - GET `/api/get_share/:shareId` (missing share ID, share link not found, orphaned share link, successful retrieval, CORS headers)
-   - Unknown routes (404 handling)
-   - Error handling (KV read/write errors, invalid JSON, CORS on errors)
-   - Integration scenarios (save-then-retrieve workflow, multiple independent plans, create-share-then-retrieve workflow, multiple share links per plan)
+3. **`worker/__tests__/index.test.ts`** - The API: plans anyone can use, ids that aren't plans (never read/written), protected plans (401/403, owner, delete), share links, cross-origin writes, other hosts, storage errors
+
+4. **`test/accounts.test.ts`** - The shared accounts module: passwords (and old hashes), sign-up rules, GAuth discovery and the USE_GAUTH rule, /auth/gauth, protecting links, the legacy migration
 
 **Configuration:**
 
-- `vitest.config.ts` - Vitest configuration using Cloudflare Workers pool
-- `wrangler.toml` - Minimal wrangler config for test runtime
+- `vitest.config.ts` - Node environment, `src/**/__tests__`, `worker/**/__tests__`, `test/`
+
+**Local dev:** `npm run dev` (Vite). Put `APP_ORIGIN` (the dev server's origin), `BETTER_AUTH_SECRET`, and a local GAuth's `GAUTH_ORIGIN`/`GAUTH_CERTS` in `.dev.vars` (gitignored), and run `npx wrangler d1 migrations apply pyre --local` once.
+
+**Deploy:** `npx wrangler d1 migrations apply pyre --remote` (when `migrations/` changes), then `npm run deploy`.
 
 # Rules
 

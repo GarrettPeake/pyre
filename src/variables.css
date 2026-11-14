@@ -70,3 +70,19 @@
   --font-size-4xl: 2.5rem;
   --font-size-5xl: 3rem;
 }
+
+/* The sign-in dialog (src/accounts/accounts.css) in Pyre's colours. */
+:root {
+  --acct-bg: var(--color-bg-primary);
+  --acct-fg: var(--color-text-primary);
+  --acct-muted: var(--color-text-secondary);
+  --acct-field: var(--color-bg-secondary);
+  --acct-border: var(--color-border);
+  --acct-accent: var(--color-primary);
+  --acct-accent-fg: var(--color-white);
+  --acct-focus: var(--color-accent-orange);
+  --acct-danger: var(--color-cancel);
+  --acct-font: var(--font-family);
+  --acct-mono: var(--font-family);
+  --acct-radius: var(--radius-sm);
+}

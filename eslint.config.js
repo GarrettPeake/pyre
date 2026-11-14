@@ -20,4 +20,9 @@ export default tseslint.config([
       globals: globals.browser,
     },
   },
+  {
+    // Shared with Decklister: its safeNext() rejects control characters on purpose.
+    files: ['worker/accounts/**'],
+    rules: { 'no-control-regex': 'off' },
+  },
 ])

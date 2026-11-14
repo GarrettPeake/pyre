@@ -1,671 +1,268 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from "vitest";
+import { readFileSync } from "node:fs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../index";
+import { d1, migratedDb } from "../../test/d1";
 
-/**
- * Mock KVNamespace for testing
- */
-function createMockKV() {
+const ORIGIN = "https://pyre.test";
+const CERTS: string = JSON.parse(/"GAUTH_CERTS": ("[^"]+")/.exec(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8"))![1]);
+
+const PLAN = "3f8b2c1a-4d5e-4f60-8a7b-9c0d1e2f3a4b";
+const OTHER_PLAN = "7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d";
+const SHARE = "0e1d2c3b-4a59-4687-b6a5-948372615040";
+
+function memoryKV() {
   const store = new Map<string, string>();
-
   return {
     get: vi.fn(async (key: string, options?: { type?: "json" | "text" }) => {
       const value = store.get(key);
       if (value === undefined) return null;
-      if (options?.type === "json") {
-        return JSON.parse(value);
-      }
-      return value;
+      return options?.type === "json" ? JSON.parse(value) : value;
     }),
-    put: vi.fn(async (key: string, value: string) => {
-      store.set(key, value);
-    }),
-    delete: vi.fn(async (key: string) => {
-      store.delete(key);
-    }),
-    // For test inspection
-    _store: store,
+    put: vi.fn(async (key: string, value: string) => void store.set(key, value)),
+    delete: vi.fn(async (key: string) => void store.delete(key)),
+    store,
   };
 }
 
-/**
- * Create a Request object for testing
- */
-function createRequest(
-  url: string,
-  options: RequestInit = {}
-): Request {
-  return new Request(url, options);
-}
+let kv: ReturnType<typeof memoryKV>;
+let env: Parameters<typeof worker.fetch>[1];
+let ip = 0;
 
-/**
- * Create mock environment with KV namespace
- */
-function createMockEnv(kv = createMockKV()) {
-  return {
+beforeEach(() => {
+  kv = memoryKV();
+  env = {
     FINANCIAL_PLANS: kv as unknown as KVNamespace,
-    JWT_SECRET: "test-jwt-secret-key-for-testing-only",
+    DB: d1(migratedDb()),
+    APP_ORIGIN: ORIGIN,
+    GAUTH_ORIGIN: "https://auth.test",
+    GAUTH_CERTS: CERTS,
+    BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret-0123456789",
+  };
+});
+
+/** A browser on pyre.test: keeps its cookies and sends this origin. */
+function browser() {
+  const jar = new Map<string, string>();
+  const addr = `10.1.0.${++ip}`;
+  return async (path: string, init: RequestInit & { json?: unknown; origin?: string } = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set("Origin", init.origin ?? ORIGIN);
+    headers.set("CF-Connecting-IP", addr);
+    if (jar.size) headers.set("Cookie", [...jar].map(([k, v]) => `${k}=${v}`).join("; "));
+    let body = init.body;
+    if (init.json !== undefined) {
+      headers.set("Content-Type", "application/json");
+      body = JSON.stringify(init.json);
+    }
+    const res = await worker.fetch(new Request(ORIGIN + path, { ...init, headers, body }), env);
+    for (const c of res.headers.getSetCookie()) {
+      const [pair, ...attrs] = c.split(";");
+      const [k, v] = pair.split("=");
+      if (attrs.some((a) => /max-age=0\b/i.test(a.trim())) || v === "") jar.delete(k);
+      else jar.set(k, v);
+    }
+    return res;
   };
 }
 
-describe("Worker API", () => {
-  let mockKV: ReturnType<typeof createMockKV>;
-  let env: ReturnType<typeof createMockEnv>;
-  const mockContext = {} as ExecutionContext;
+/** A browser signed in to a new password account. */
+async function signedIn(username: string) {
+  const send = browser();
+  const res = await send("/api/auth/sign-up/email", { method: "POST", json: { username, password: "correct horse", email: "", name: "" } });
+  expect(res.status).toBe(200);
+  return send;
+}
 
-  beforeEach(() => {
-    mockKV = createMockKV();
-    env = createMockEnv(mockKV);
-    vi.clearAllMocks();
+const plan = (name = "My Plan") => ({ simulationName: name, currentAge: 30, retirementAge: 62, globalInit: "cash = 1", graphs: [], blocks: [] });
+
+describe("plans anyone can use (not protected)", () => {
+  it("a new plan is a 404 until it's saved, then reads back", async () => {
+    const send = browser();
+    const missing = await send(`/api/get_plan/${PLAN}`);
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("X-Link-Protected")).toBe("0");
+
+    const saved = await send(`/api/save_plan/${PLAN}`, { method: "POST", json: plan() });
+    expect(saved.status).toBe(200);
+    const res = await send(`/api/get_plan/${PLAN}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Link-Protected")).toBe("0");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = await res.json();
+    expect(body).toMatchObject(plan());
+    expect(body.lastModified).toBeDefined();
   });
 
-  describe("GET /api/get_plan/:key", () => {
-    it("should return 400 if no key is provided", async () => {
-      const request = createRequest("https://example.com/api/get_plan/");
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(400);
-      const body = await response.json();
-      expect(body).toEqual({ error: "No key provided" });
-    });
-
-    it("should return 404 if plan does not exist", async () => {
-      const request = createRequest(
-        "https://example.com/api/get_plan/05788a14-3b16-5695-858c-7bb18a8bc244"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(404);
-      const body = await response.json();
-      expect(body).toEqual({ error: "Plan not found" });
-      expect(mockKV.get).toHaveBeenCalledWith("05788a14-3b16-5695-858c-7bb18a8bc244", {
-        type: "json",
-      });
-    });
-
-    it("should return plan data if it exists", async () => {
-      const planData = {
-        simulationName: "Test Plan",
-        currentAge: 30,
-        retirementAge: 65,
-        globalInit: "cash = 10000",
-        blocks: [],
-      };
-      mockKV._store.set("836bfae6-f6b6-56b4-b029-35c4b13f143b", JSON.stringify(planData));
-
-      const request = createRequest(
-        "https://example.com/api/get_plan/836bfae6-f6b6-56b4-b029-35c4b13f143b"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(200);
-      const body = await response.json();
-      expect(body).toEqual(planData);
-      expect(mockKV.get).toHaveBeenCalledWith("836bfae6-f6b6-56b4-b029-35c4b13f143b", { type: "json" });
-    });
-
-    it("should include CORS headers", async () => {
-      const request = createRequest(
-        "https://example.com/api/get_plan/de90ee42-a095-565d-a81e-48cc10000e9a"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-      expect(response.headers.get("Content-Type")).toBe("application/json");
-    });
-
-    it("should accept upper-case UUIDs", async () => {
-      const planData = { name: "Special Plan" };
-      const specialKey = "123E4567-E89B-42D3-A456-426614174000";
-      mockKV._store.set(specialKey, JSON.stringify(planData));
-
-      const request = createRequest(
-        `https://example.com/api/get_plan/${specialKey}`
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(200);
-      const body = await response.json();
-      expect(body).toEqual(planData);
-    });
+  it("plans are independent of each other", async () => {
+    const send = browser();
+    await send(`/api/save_plan/${PLAN}`, { method: "POST", json: plan("one") });
+    await send(`/api/save_plan/${OTHER_PLAN}`, { method: "POST", json: plan("two") });
+    expect((await (await send(`/api/get_plan/${PLAN}`)).json()).simulationName).toBe("one");
+    expect((await (await send(`/api/get_plan/${OTHER_PLAN}`)).json()).simulationName).toBe("two");
   });
 
-  describe("Keys that are not plan ids", () => {
-    it("never reads or writes user or share records as plans", async () => {
-      const user = { username: "alice", passwordHash: "h", salt: "s", planIds: [] };
-      mockKV._store.set("user:alice", JSON.stringify(user));
-      for (const path of ["get_plan/user:alice", "get_plan/share:x", "create_share/user:alice"]) {
-        const response = await worker.fetch(createRequest(`https://example.com/api/${path}`), env, mockContext);
-        expect(response.status).toBe(400);
-      }
-      const save = await worker.fetch(
-        createRequest("https://example.com/api/save_plan/user:alice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: "alice", passwordHash: "mine", salt: "mine", planIds: [] }),
-        }),
-        env,
-        mockContext
-      );
-      expect(save.status).toBe(400);
-      expect(JSON.parse(mockKV._store.get("user:alice")!)).toEqual(user);
-    });
+  it("upper-case ids work", async () => {
+    const send = browser();
+    await send(`/api/save_plan/${PLAN.toUpperCase()}`, { method: "POST", json: plan() });
+    expect((await send(`/api/get_plan/${PLAN.toUpperCase()}`)).status).toBe(200);
   });
 
-  describe("POST /api/save_plan/:key", () => {
-    it("should return 400 if no key is provided", async () => {
-      const request = createRequest("https://example.com/api/save_plan/", {
-        method: "POST",
-        body: JSON.stringify({ data: "test" }),
-        headers: { "Content-Type": "application/json" },
-      });
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(400);
-      const body = await response.json();
-      expect(body).toEqual({ error: "No key provided" });
-    });
-
-    it("should save plan data successfully", async () => {
-      const planData = {
-        simulationName: "My Retirement Plan",
-        currentAge: 25,
-        retirementAge: 62,
-        globalInit: "k401 = 50000\ncash = 10000",
-        blocks: [
-          {
-            id: "block1",
-            title: "Savings",
-            startDate: "2024-01-01",
-            endDate: "2050-01-01",
-          },
-        ],
-      };
-
-      const request = createRequest(
-        "https://example.com/api/save_plan/150c2a3c-f245-5248-9b24-3ca64d8b81d4",
-        {
-          method: "POST",
-          body: JSON.stringify(planData),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(200);
-      const body = await response.json();
-      expect(body).toEqual({ success: true });
-      // Verify put was called and check saved data includes our values plus lastModified
-      expect(mockKV.put).toHaveBeenCalled();
-      const savedData = JSON.parse(mockKV._store.get("150c2a3c-f245-5248-9b24-3ca64d8b81d4")!);
-      expect(savedData.simulationName).toBe("My Retirement Plan");
-      expect(savedData.currentAge).toBe(25);
-      expect(savedData.lastModified).toBeDefined();
-    });
-
-    it("should include CORS headers on save response", async () => {
-      const request = createRequest(
-        "https://example.com/api/save_plan/1152bed0-eca1-5a16-8f77-1ee0a4a77d83",
-        {
-          method: "POST",
-          body: JSON.stringify({ test: true }),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-      expect(response.headers.get("Content-Type")).toBe("application/json");
-    });
-
-    it("should overwrite existing plan data", async () => {
-      const originalPlan = { name: "Original" };
-      const updatedPlan = { name: "Updated", newField: true };
-      mockKV._store.set("9252d1cf-6bd8-54c8-b0c8-b360de26427c", JSON.stringify(originalPlan));
-
-      const request = createRequest(
-        "https://example.com/api/save_plan/9252d1cf-6bd8-54c8-b0c8-b360de26427c",
-        {
-          method: "POST",
-          body: JSON.stringify(updatedPlan),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(200);
-      // Verify put was called with the key and check the saved data includes our updates
-      expect(mockKV.put).toHaveBeenCalled();
-      const savedData = JSON.parse(mockKV._store.get("9252d1cf-6bd8-54c8-b0c8-b360de26427c")!);
-      expect(savedData.name).toBe("Updated");
-      expect(savedData.newField).toBe(true);
-      expect(savedData.lastModified).toBeDefined();
-    });
-
-    it("should handle large plan data", async () => {
-      const largePlan = {
-        simulationName: "Large Plan",
-        blocks: Array(100)
-          .fill(null)
-          .map((_, i) => ({
-            id: `block-${i}`,
-            title: `Block ${i}`,
-            init: "x = ".repeat(100) + "1",
-            execution: "y = x + 1\n".repeat(50),
-          })),
-      };
-
-      const request = createRequest(
-        "https://example.com/api/save_plan/52a255af-15d1-5687-84f6-4677e33315a7",
-        {
-          method: "POST",
-          body: JSON.stringify(largePlan),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(200);
-      expect(mockKV.put).toHaveBeenCalled();
-    });
+  it("the old owner field is neither returned nor saved (ownership is in D1)", async () => {
+    kv.store.set(PLAN, JSON.stringify({ ...plan(), owner: "someone" }));
+    const send = browser();
+    expect(await (await send(`/api/get_plan/${PLAN}`)).json()).not.toHaveProperty("owner");
+    await send(`/api/save_plan/${PLAN}`, { method: "POST", json: { ...plan(), owner: "me" } });
+    expect(JSON.parse(kv.store.get(PLAN)!)).not.toHaveProperty("owner");
   });
 
-  describe("Unknown routes", () => {
-    it("should return 404 for unknown API routes", async () => {
-      const request = createRequest("https://example.com/api/unknown");
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(404);
-    });
-
-    it("should return 404 for non-API routes (falls through to frontend)", async () => {
-      const request = createRequest("https://example.com/some/page");
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(404);
-    });
-
-    it("should return 404 for root path", async () => {
-      const request = createRequest("https://example.com/");
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(404);
-    });
+  it("refuses what isn't a plan", async () => {
+    const send = browser();
+    expect((await send(`/api/save_plan/${PLAN}`, { method: "POST", body: "{not json", headers: { "Content-Type": "application/json" } })).status).toBe(400);
+    expect((await send(`/api/save_plan/${PLAN}`, { method: "POST", json: [1, 2] })).status).toBe(400);
+    expect((await send(`/api/save_plan/${PLAN}`, { method: "POST", json: { big: "x".repeat(2 * 1024 * 1024) } })).status).toBe(413);
+    expect(kv.store.has(PLAN)).toBe(false);
   });
 
-  describe("Error handling", () => {
-    it("should return 500 on KV read error", async () => {
-      mockKV.get = vi.fn().mockRejectedValue(new Error("KV read failed"));
-
-      const request = createRequest(
-        "https://example.com/api/get_plan/7bdff0a0-25b7-5d9d-b2cc-5881e28068aa"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(500);
-      const body = await response.json();
-      expect(body).toEqual({ error: "Uncaught exception" });
-    });
-
-    it("should return 500 on KV write error", async () => {
-      mockKV.put = vi.fn().mockRejectedValue(new Error("KV write failed"));
-
-      const request = createRequest(
-        "https://example.com/api/save_plan/7bdff0a0-25b7-5d9d-b2cc-5881e28068aa",
-        {
-          method: "POST",
-          body: JSON.stringify({ test: true }),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(500);
-      const body = await response.json();
-      expect(body).toEqual({ error: "Uncaught exception" });
-    });
-
-    it("should return 500 on invalid JSON in request body", async () => {
-      const request = createRequest(
-        "https://example.com/api/save_plan/888cd96d-c7ff-5954-948f-e002c6779819",
-        {
-          method: "POST",
-          body: "not valid json {{{",
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(500);
-      const body = await response.json();
-      expect(body).toEqual({ error: "Uncaught exception" });
-    });
-
-    it("should include CORS headers even on error responses", async () => {
-      mockKV.get = vi.fn().mockRejectedValue(new Error("KV error"));
-
-      const request = createRequest(
-        "https://example.com/api/get_plan/7bdff0a0-25b7-5d9d-b2cc-5881e28068aa"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-    });
+  it("only takes the right methods", async () => {
+    const send = browser();
+    expect((await send(`/api/save_plan/${PLAN}`)).status).toBe(404);
+    expect((await send(`/api/get_plan/${PLAN}`, { method: "POST", json: plan() })).status).toBe(404);
+    expect((await send(`/api/nothing`)).status).toBe(404);
   });
 
-  describe("POST /api/create_share/:planId", () => {
-    it("should return 400 if no plan ID is provided", async () => {
-      const request = createRequest("https://example.com/api/create_share/", {
-        method: "POST",
-      });
-      const response = await worker.fetch(request, env, mockContext);
+  it("can't be deleted (only a protected plan's owner deletes)", async () => {
+    kv.store.set(PLAN, JSON.stringify(plan()));
+    const send = await signedIn("dora");
+    expect((await send(`/api/plans/${PLAN}`, { method: "DELETE" })).status).toBe(403);
+    expect(kv.store.has(PLAN)).toBe(true);
+  });
+});
 
-      expect(response.status).toBe(400);
-      const body = await response.json();
-      expect(body).toEqual({ error: "No plan ID provided" });
-    });
+describe("keys that are not plan ids", () => {
+  it("never reads or writes user or share records as plans", async () => {
+    const user = { username: "alice", passwordHash: "h", salt: "s", planIds: [] };
+    kv.store.set("user:alice", JSON.stringify(user));
+    kv.store.set(`share:${SHARE}`, PLAN);
+    const send = browser();
+    for (const path of ["get_plan/user:alice", `get_plan/share:${SHARE}`, "get_plan/", "get_plan/..%2Fuser:alice"]) {
+      expect((await send(`/api/${path}`)).status).toBe(400);
+    }
+    for (const path of ["save_plan/user:alice", "create_share/user:alice"]) {
+      expect((await send(`/api/${path}`, { method: "POST", json: { username: "alice", passwordHash: "mine", salt: "mine" } })).status).toBe(400);
+    }
+    expect((await send("/api/plans/user:alice", { method: "DELETE" })).status).toBe(400);
+    expect(JSON.parse(kv.store.get("user:alice")!)).toEqual(user);
+  });
+});
 
-    it("should return 404 if plan does not exist", async () => {
-      const request = createRequest(
-        "https://example.com/api/create_share/e72bac0d-ce3f-57cd-a60b-450ad95bcbc0",
-        { method: "POST" }
-      );
-      const response = await worker.fetch(request, env, mockContext);
+describe("protected plans", () => {
+  it("open only in the owner's session", async () => {
+    const anyone = browser();
+    await anyone(`/api/save_plan/${PLAN}`, { method: "POST", json: plan("mine") });
 
-      expect(response.status).toBe(404);
-      const body = await response.json();
-      expect(body).toEqual({ error: "Plan not found" });
-    });
+    const owner = await signedIn("erin");
+    expect((await owner("/api/account/links", { method: "POST", json: { id: PLAN } })).status).toBe(200);
 
-    it("should create a share link for an existing plan", async () => {
-      const planData = { simulationName: "Test Plan", currentAge: 30 };
-      mockKV._store.set("836bfae6-f6b6-56b4-b029-35c4b13f143b", JSON.stringify(planData));
+    const anon = await anyone(`/api/get_plan/${PLAN}`);
+    expect(anon.status).toBe(401);
+    expect(await anon.json()).toMatchObject({ protected: true });
+    const overwrite = await anyone(`/api/save_plan/${PLAN}`, { method: "POST", json: plan("theirs") });
+    expect(overwrite.status).toBe(401);
 
-      const request = createRequest(
-        "https://example.com/api/create_share/836bfae6-f6b6-56b4-b029-35c4b13f143b",
-        { method: "POST" }
-      );
-      const response = await worker.fetch(request, env, mockContext);
+    const stranger = await signedIn("fred");
+    const other = await stranger(`/api/get_plan/${PLAN}`);
+    expect(other.status).toBe(403);
+    expect(await other.json()).toMatchObject({ protected: true, otherAccount: true });
+    expect((await stranger(`/api/plans/${PLAN}`, { method: "DELETE" })).status).toBe(403);
+    expect((await stranger("/api/account/links", { method: "POST", json: { id: PLAN } })).status).toBe(409);
 
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { shareId: string };
-      expect(body).toHaveProperty("shareId");
-      expect(typeof body.shareId).toBe("string");
-      expect(body.shareId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      );
-    });
+    const mine = await owner(`/api/get_plan/${PLAN}`);
+    expect(mine.status).toBe(200);
+    expect(mine.headers.get("X-Link-Protected")).toBe("1");
+    expect((await mine.json()).simulationName).toBe("mine");
+    expect((await owner(`/api/save_plan/${PLAN}`, { method: "POST", json: plan("renamed") })).status).toBe(200);
 
-    it("should store the share mapping in KV", async () => {
-      const planData = { simulationName: "Test Plan" };
-      mockKV._store.set("47548d7c-be59-5a01-927a-5744fd59d225", JSON.stringify(planData));
-
-      const request = createRequest(
-        "https://example.com/api/create_share/47548d7c-be59-5a01-927a-5744fd59d225",
-        { method: "POST" }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-      const body = (await response.json()) as { shareId: string };
-
-      expect(mockKV.put).toHaveBeenCalledWith(
-        `share:${body.shareId}`,
-        "47548d7c-be59-5a01-927a-5744fd59d225"
-      );
-    });
-
-    it("should include CORS headers", async () => {
-      const planData = { simulationName: "Test Plan" };
-      mockKV._store.set("3b28d534-3cb0-5004-885f-7622a49683ad", JSON.stringify(planData));
-
-      const request = createRequest(
-        "https://example.com/api/create_share/3b28d534-3cb0-5004-885f-7622a49683ad",
-        { method: "POST" }
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-      expect(response.headers.get("Content-Type")).toBe("application/json");
-    });
+    // The account lists it under the plan's name.
+    const me = await (await owner("/api/account")).json();
+    expect(me.links).toEqual([expect.objectContaining({ id: PLAN, path: `/app/${PLAN}`, label: "renamed" })]);
   });
 
-  describe("GET /api/get_share/:shareId", () => {
-    it("should return 400 if no share ID is provided", async () => {
-      const request = createRequest("https://example.com/api/get_share/");
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(400);
-      const body = await response.json();
-      expect(body).toEqual({ error: "No share ID provided" });
-    });
-
-    it("should return 404 if share link does not exist", async () => {
-      const request = createRequest(
-        "https://example.com/api/get_share/0615561f-9711-5197-bcbc-6c03dd6583d2"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(404);
-      const body = await response.json();
-      expect(body).toEqual({ error: "Share link not found" });
-    });
-
-    it("should return 404 if underlying plan no longer exists", async () => {
-      // Store a share mapping but not the actual plan
-      mockKV._store.set("share:f4ee19d1-499d-5fa7-b7b5-4f4b653dc369", "deleted-plan-id");
-
-      const request = createRequest(
-        "https://example.com/api/get_share/f4ee19d1-499d-5fa7-b7b5-4f4b653dc369"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(404);
-      const body = await response.json();
-      expect(body).toEqual({ error: "Plan no longer exists" });
-    });
-
-    it("should return plan data for valid share link", async () => {
-      const planData = {
-        simulationName: "Shared Plan",
-        currentAge: 35,
-        retirementAge: 60,
-      };
-      mockKV._store.set("original-plan-id", JSON.stringify(planData));
-      mockKV._store.set("share:70eedc4e-4d6e-5f15-be85-3e23d55a8c05", "original-plan-id");
-
-      const request = createRequest(
-        "https://example.com/api/get_share/70eedc4e-4d6e-5f15-be85-3e23d55a8c05"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.status).toBe(200);
-      const body = await response.json();
-      expect(body).toEqual(planData);
-    });
-
-    it("should include CORS headers", async () => {
-      const request = createRequest(
-        "https://example.com/api/get_share/72d18675-12ea-51a2-94e3-b505465e53d8"
-      );
-      const response = await worker.fetch(request, env, mockContext);
-
-      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-      expect(response.headers.get("Content-Type")).toBe("application/json");
-    });
+  it("only plan ids can be protected", async () => {
+    const owner = await signedIn("gail");
+    expect((await owner("/api/account/links", { method: "POST", json: { id: "user:gail" } })).status).toBe(400);
   });
 
-  describe("Integration scenarios", () => {
-    it("should support save then retrieve workflow", async () => {
-      const planData = {
-        simulationName: "Integration Test Plan",
-        currentAge: 28,
-        retirementAge: 60,
-        globalInit: "investments = 100000",
-        graphs: [{ id: "graph1", title: "Net Worth" }],
-        blocks: [],
-      };
-      const planId = "0b7f1c9e-2a44-4c1e-9d55-7a1b3c5d7e90";
+  it("the owner deletes one, which also unprotects its id", async () => {
+    const owner = await signedIn("hugo");
+    await owner(`/api/save_plan/${PLAN}`, { method: "POST", json: plan() });
+    await owner("/api/account/links", { method: "POST", json: { id: PLAN } });
+    expect((await owner(`/api/plans/${PLAN}`, { method: "DELETE" })).status).toBe(200);
+    expect(kv.store.has(PLAN)).toBe(false);
+    expect((await (await owner("/api/account")).json()).links).toEqual([]);
+    expect((await browser()(`/api/get_plan/${PLAN}`)).status).toBe(404);
+  });
 
-      // Save the plan
-      const saveRequest = createRequest(
-        `https://example.com/api/save_plan/${planId}`,
-        {
-          method: "POST",
-          body: JSON.stringify(planData),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      const saveResponse = await worker.fetch(saveRequest, env, mockContext);
-      expect(saveResponse.status).toBe(200);
+  it("a signed-in account protects a new plan before it's ever saved", async () => {
+    const owner = await signedIn("iris");
+    await owner("/api/account/links", { method: "POST", json: { id: PLAN } });
+    expect((await owner(`/api/get_plan/${PLAN}`)).status).toBe(404);
+    expect((await browser()(`/api/save_plan/${PLAN}`, { method: "POST", json: plan() })).status).toBe(401);
+    expect((await owner(`/api/save_plan/${PLAN}`, { method: "POST", json: plan() })).status).toBe(200);
+  });
+});
 
-      // Retrieve the plan
-      const getRequest = createRequest(
-        `https://example.com/api/get_plan/${planId}`
-      );
-      const getResponse = await worker.fetch(getRequest, env, mockContext);
-      expect(getResponse.status).toBe(200);
+describe("share links", () => {
+  it("give a read-only copy of the plan to anyone holding them", async () => {
+    const send = browser();
+    await send(`/api/save_plan/${PLAN}`, { method: "POST", json: plan("shared") });
+    const res = await send(`/api/create_share/${PLAN}`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const { shareId } = await res.json();
+    expect(kv.store.get(`share:${shareId}`)).toBe(PLAN);
+    const shared = await browser()(`/api/get_share/${shareId}`);
+    expect(shared.status).toBe(200);
+    expect((await shared.json()).simulationName).toBe("shared");
+    // Read-only: there's no writing through a share id.
+    expect((await browser()(`/api/save_plan/${shareId}`, { method: "POST", json: plan("x") })).status).toBe(200);
+    expect((await (await browser()(`/api/get_share/${shareId}`)).json()).simulationName).toBe("shared");
+  });
 
-      const retrievedPlan = await getResponse.json() as Record<string, unknown>;
-      // Use toMatchObject to ignore lastModified field added by save
-      expect(retrievedPlan).toMatchObject(planData);
-      expect(retrievedPlan.lastModified).toBeDefined();
-    });
+  it("of a protected plan, only its owner makes them; they still work for anyone", async () => {
+    const owner = await signedIn("jack");
+    await owner(`/api/save_plan/${PLAN}`, { method: "POST", json: plan("private") });
+    await owner("/api/account/links", { method: "POST", json: { id: PLAN } });
+    expect((await browser()(`/api/create_share/${PLAN}`, { method: "POST" })).status).toBe(401);
+    const { shareId } = await (await owner(`/api/create_share/${PLAN}`, { method: "POST" })).json();
+    expect((await (await browser()(`/api/get_share/${shareId}`)).json()).simulationName).toBe("private");
+  });
 
-    it("should handle multiple plans independently", async () => {
-      const plan1 = { name: "Plan 1" };
-      const plan2 = { name: "Plan 2" };
+  it("404 for unknown shares, unknown plans and deleted plans", async () => {
+    const send = browser();
+    expect((await send(`/api/create_share/${PLAN}`, { method: "POST" })).status).toBe(404);
+    expect((await send(`/api/get_share/${SHARE}`)).status).toBe(404);
+    expect((await send("/api/get_share/not-a-share")).status).toBe(404);
+    kv.store.set(`share:${SHARE}`, PLAN);
+    expect((await send(`/api/get_share/${SHARE}`)).status).toBe(404);
+  });
+});
 
-      // Save both plans
-      await worker.fetch(
-        createRequest("https://example.com/api/save_plan/159aed14-5614-55d0-934c-43882aef4d00", {
-          method: "POST",
-          body: JSON.stringify(plan1),
-          headers: { "Content-Type": "application/json" },
-        }),
-        env,
-        mockContext
-      );
-      await worker.fetch(
-        createRequest("https://example.com/api/save_plan/2cc49ad4-a050-5cbd-9923-250d30ca941a", {
-          method: "POST",
-          body: JSON.stringify(plan2),
-          headers: { "Content-Type": "application/json" },
-        }),
-        env,
-        mockContext
-      );
+describe("the edges", () => {
+  it("refuses writes from other sites", async () => {
+    const send = browser();
+    const res = await send(`/api/save_plan/${PLAN}`, { method: "POST", json: plan(), origin: "https://evil.gpeake.com" });
+    expect(res.status).toBe(403);
+    expect(kv.store.has(PLAN)).toBe(false);
+  });
 
-      // Retrieve both plans
-      const response1 = await worker.fetch(
-        createRequest("https://example.com/api/get_plan/159aed14-5614-55d0-934c-43882aef4d00"),
-        env,
-        mockContext
-      );
-      const response2 = await worker.fetch(
-        createRequest("https://example.com/api/get_plan/2cc49ad4-a050-5cbd-9923-250d30ca941a"),
-        env,
-        mockContext
-      );
+  it("sends other hosts to the one address", async () => {
+    const res = await worker.fetch(new Request(`https://other.test/app/${PLAN}?x=1`), env);
+    expect(res.status).toBe(301);
+    expect(res.headers.get("Location")).toBe(`${ORIGIN}/app/${PLAN}?x=1`);
+  });
 
-      // Use toMatchObject to ignore lastModified field added by save
-      expect(await response1.json()).toMatchObject(plan1);
-      expect(await response2.json()).toMatchObject(plan2);
-    });
-
-    it("should support create share then retrieve via share link workflow", async () => {
-      const planData = {
-        simulationName: "Share Workflow Test",
-        currentAge: 32,
-        retirementAge: 65,
-        globalInit: "cash = 50000",
-        blocks: [],
-      };
-      const planId = "5e2d8f6a-91b3-4f07-8c2e-3d4a5b6c7d81";
-
-      // Save the plan
-      const saveRequest = createRequest(
-        `https://example.com/api/save_plan/${planId}`,
-        {
-          method: "POST",
-          body: JSON.stringify(planData),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      await worker.fetch(saveRequest, env, mockContext);
-
-      // Create a share link
-      const createShareRequest = createRequest(
-        `https://example.com/api/create_share/${planId}`,
-        { method: "POST" }
-      );
-      const createShareResponse = await worker.fetch(
-        createShareRequest,
-        env,
-        mockContext
-      );
-      expect(createShareResponse.status).toBe(200);
-      const { shareId } = (await createShareResponse.json()) as { shareId: string };
-
-      // Retrieve via share link
-      const getShareRequest = createRequest(
-        `https://example.com/api/get_share/${shareId}`
-      );
-      const getShareResponse = await worker.fetch(
-        getShareRequest,
-        env,
-        mockContext
-      );
-      expect(getShareResponse.status).toBe(200);
-
-      const retrievedPlan = await getShareResponse.json();
-      // Use toMatchObject to ignore lastModified field added by save
-      expect(retrievedPlan).toMatchObject(planData);
-    });
-
-    it("should allow multiple share links for the same plan", async () => {
-      const planData = { simulationName: "Multi-share Plan" };
-      mockKV._store.set("8faee7f8-db7f-5241-895d-2b3a00ba28c0", JSON.stringify(planData));
-
-      // Create two share links
-      const response1 = await worker.fetch(
-        createRequest("https://example.com/api/create_share/8faee7f8-db7f-5241-895d-2b3a00ba28c0", {
-          method: "POST",
-        }),
-        env,
-        mockContext
-      );
-      const response2 = await worker.fetch(
-        createRequest("https://example.com/api/create_share/8faee7f8-db7f-5241-895d-2b3a00ba28c0", {
-          method: "POST",
-        }),
-        env,
-        mockContext
-      );
-
-      const { shareId: shareId1 } = (await response1.json()) as { shareId: string };
-      const { shareId: shareId2 } = (await response2.json()) as { shareId: string };
-
-      // Both should be different
-      expect(shareId1).not.toBe(shareId2);
-
-      // Both should return the same plan
-      const getResponse1 = await worker.fetch(
-        createRequest(`https://example.com/api/get_share/${shareId1}`),
-        env,
-        mockContext
-      );
-      const getResponse2 = await worker.fetch(
-        createRequest(`https://example.com/api/get_share/${shareId2}`),
-        env,
-        mockContext
-      );
-
-      expect(await getResponse1.json()).toEqual(planData);
-      expect(await getResponse2.json()).toEqual(planData);
-    });
+  it("answers 500 when storage fails", async () => {
+    kv.get.mockRejectedValueOnce(new Error("KV down"));
+    vi.spyOn(console, "error").mockImplementationOnce(() => {});
+    expect((await browser()(`/api/get_plan/${PLAN}`)).status).toBe(500);
   });
 });
